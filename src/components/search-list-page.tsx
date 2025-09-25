@@ -36,24 +36,23 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
   };
   
   const handleRetireOnu = (onuToRetire: OnuData) => {
-    const alreadyRemoved = allRemovedOnus.some(o => o['ONU ID'] === onuToRetire['ONU ID']);
-    if (alreadyRemoved) {
-        // If it's already in the removed list, just remove from search list
-        handleRemoveFromSearchList(onuToRetire['ONU ID']);
-        return;
+    const isAlreadyRemoved = allRemovedOnus.some(o => o['ONU ID'] === onuToRetire['ONU ID']);
+    
+    let newActiveOnus = [...allActiveOnus];
+    let newRemovedOnus = [...allRemovedOnus];
+    
+    if (!isAlreadyRemoved) {
+        const removedDate = new Date().toISOString();
+        const retiredOnu: OnuData = { 
+            ...onuToRetire, 
+            removedDate,
+            history: [...(onuToRetire.history || []), { action: 'removed', date: removedDate }]
+        };
+        newActiveOnus = allActiveOnus.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
+        newRemovedOnus = [retiredOnu, ...allRemovedOnus];
     }
 
-    const removedDate = new Date().toISOString();
-    const retiredOnu: OnuData = { 
-        ...onuToRetire, 
-        removedDate,
-        history: [...(onuToRetire.history || []), { action: 'removed', date: removedDate }]
-    };
-    
-    const newActiveOnus = allActiveOnus.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
-    const newRemovedOnus = [retiredOnu, ...allRemovedOnus];
-    const newSearchList = searchList.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
-
+    const newSearchList = searchList.filter(onu => onu['ONU ID'] !== onuToRetire['ONU ID']);
     onDataChange(newActiveOnus, newRemovedOnus, newSearchList);
     setOnuToRetire(null);
   };
@@ -62,19 +61,22 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
     const date = new Date().toISOString();
     let activeOnus = [...allActiveOnus];
     let removedOnus = [...allRemovedOnus];
-    const searchListIds = new Set(searchList.map(o => o['ONU ID']));
 
     searchList.forEach(onuInSearch => {
-        if (!removedOnus.some(o => o['ONU ID'] === onuInSearch['ONU ID'])) {
+        const isAlreadyRemoved = removedOnus.some(o => o['ONU ID'] === onuInSearch['ONU ID']);
+        if (!isAlreadyRemoved) {
             const retiredOnu: OnuData = {
                 ...onuInSearch,
                 removedDate: date,
                 history: [...(onuInSearch.history || []), { action: 'removed', date }]
             };
             activeOnus = activeOnus.filter(o => o['ONU ID'] !== onuInSearch['ONU ID']);
-            removedOnus = [retiredOnu, ...removedOnus];
+            removedOnus.push(retiredOnu);
         }
     });
+    
+    // Sort removed ONUs to have the most recent ones first
+    removedOnus.sort((a, b) => new Date(b.removedDate!).getTime() - new Date(a.removedDate!).getTime());
 
     onDataChange(activeOnus, removedOnus, []);
     setIsConfirmRetireAllOpen(false);
@@ -126,7 +128,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
                             <Server className="h-4 w-4" />
                             <span className="font-medium">{onu.Shelf}</span>
                             </span>
-                            {onu.removedDate || allRemovedOnus.some(o => o['ONU ID'] === onu['ONU ID']) ? (
+                            {allRemovedOnus.some(o => o['ONU ID'] === onu['ONU ID']) ? (
                             <Badge variant="destructive">Retirada</Badge>
                             ) : (
                             <Badge variant="secondary" className="bg-green-100 text-green-800">Activa</Badge>
@@ -165,7 +167,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
                     onClick={() => setOnuToRetire(onu)}
                   >
                     <CheckCircle className="mr-2 h-4 w-4" />
-                    Retirar
+                    Encontrada
                   </Button>
                 </CardFooter>
               </Card>
@@ -188,7 +190,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar como encontrada?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá la ONU <strong className='break-all'>{onuToRetire?.['ONU ID']}</strong> a la lista de "Retiradas" y la quitará de la lista de búsqueda.
+              Esto moverá la ONU <strong className='break-all'>{onuToRetire?.['ONU ID']}</strong> a la lista de "Retiradas" (si no lo estaba ya) y la quitará de la lista de búsqueda.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -206,7 +208,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar todas como encontradas?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá las {searchList.length} ONUs de esta lista a "Retiradas" y limpiará la lista de búsqueda. ¿Estás seguro?
+              Esto moverá las {searchList.length} ONUs de esta lista a "Retiradas" (si no lo estaban ya) y limpiará la lista de búsqueda. ¿Estás seguro?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
