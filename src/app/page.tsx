@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
-import { Boxes, Trash2, Settings, History } from 'lucide-react';
+import { Boxes, Trash2, Settings, History, SearchCheck } from 'lucide-react';
 import { OptionsPage } from '@/components/options-page';
 import { HistoryPage } from '@/components/history-page';
+import { SearchListPage } from '@/components/search-list-page';
 import { type OnuData } from '@/lib/data';
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<'activas' | 'retiradas' | 'opciones' | 'historial'>('activas');
+  const [activeView, setActiveView] = useState<'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda'>('activas');
   const [allOnus, setAllOnus] = useState<OnuData[]>([]);
 
   const handleDataChange = (data: OnuData[], removed: OnuData[]) => {
@@ -28,6 +29,8 @@ export default function Home() {
         return <OptionsPage />;
       case 'historial':
         return <HistoryPage allOnus={allOnus} />;
+      case 'en-busqueda':
+        return <SearchListPage />;
       default:
         return <OnuFinder activeView="activas" onDataChange={handleDataChange} />;
     }
@@ -56,6 +59,12 @@ export default function Home() {
               <SidebarMenuButton onClick={() => setActiveView('retiradas')} isActive={activeView === 'retiradas'} tooltip={{children: 'Retiradas'}}>
                 <Trash2 />
                 Retiradas
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={() => setActiveView('en-busqueda')} isActive={activeView === 'en-busqueda'} tooltip={{children: 'En Búsqueda'}}>
+                <SearchCheck />
+                En Búsqueda
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
