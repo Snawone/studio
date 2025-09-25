@@ -11,12 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { collection } from 'firebase/firestore';
-import { Loader2, Warehouse, PlusCircle, Edit } from 'lucide-react';
+import { collection, doc } from 'firebase/firestore';
+import { Loader2, Warehouse, PlusCircle, Edit, Trash2 } from 'lucide-react';
 import { type Shelf } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { addDocumentNonBlocking, updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
-import { doc } from 'firebase/firestore';
+import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import {
   Dialog,
   DialogContent,
@@ -27,6 +26,19 @@ import {
   DialogClose,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 const shelfSchema = z.object({
   name: z.string().min(1, "El nombre es requerido."),
@@ -36,29 +48,34 @@ const shelfSchema = z.object({
 
 type ShelfFormValues = z.infer<typeof shelfSchema>;
 
-// Reusable Shelf Form Component
 function ShelfForm({
   shelf,
   onSubmit,
+  onClose,
   isSubmitting,
   submitText,
   isEdit = false,
+  itemCount = 0,
 }: {
   shelf?: ShelfFormValues;
   onSubmit: (values: any) => void;
+  onClose: () => void;
   isSubmitting: boolean;
   submitText: string;
   isEdit?: boolean;
+  itemCount?: number;
 }) {
   const form = useForm<ShelfFormValues>({
     resolver: zodResolver(shelfSchema),
     defaultValues: shelf || { name: '', capacity: 1, type: 'onu' },
   });
+  
+  const canChangeType = !isEdit || itemCount === 0;
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
-        <div className="space-y-4">
+        <div className="space-y-4 py-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <FormField
               control={form.control}
@@ -77,7 +94,7 @@ function ShelfForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Capacidad Máxima</FormLabel>
-                  <FormControl><Input type="number" min="1" {...field} /></FormControl>
+                  <FormControl><Input type="number" min={itemCount} {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -88,28 +105,39 @@ function ShelfForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Contenido</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isEdit}>
-                    <FormControl>
-                      <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="onu">ONUs</SelectItem>
-                      <SelectItem value="stb">STBs</SelectItem>
-                    </SelectContent>
-                  </Select>
+                   <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className={!canChangeType ? 'cursor-not-allowed' : ''}>
+                          <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canChangeType}>
+                            <FormControl>
+                              <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="onu">ONUs</SelectItem>
+                              <SelectItem value="stb">STBs</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </TooltipTrigger>
+                      {!canChangeType && (
+                        <TooltipContent>
+                          <p>No se puede cambiar el tipo de un estante con items.</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
                   <FormMessage />
                 </FormItem>
               )}
             />
           </div>
         </div>
-        <div className="mt-4 flex justify-end">
-            <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                <PlusCircle className="mr-2 h-4 w-4" />
-                {isSubmitting ? 'Guardando...' : submitText}
-            </Button>
-        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isSubmitting ? 'Guardando...' : submitText}
+          </Button>
+        </DialogFooter>
       </form>
     </Form>
   );
@@ -119,48 +147,59 @@ function ShelfForm({
 export function ShelvesManagementPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
-  const [isCreatingShelf, setIsCreatingShelf] = useState(false);
-  const [isUpdatingShelf, setIsUpdatingShelf] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingShelf, setEditingShelf] = useState<Shelf | null>(null);
 
   const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
   const { data: shelves, isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
 
   const handleCreateShelf = async (values: ShelfFormValues) => {
-    setIsCreatingShelf(true);
+    setIsSubmitting(true);
     const newShelfData = {
         ...values,
         itemCount: 0,
         createdAt: new Date().toISOString(),
     };
     
-    addDocumentNonBlocking(collection(firestore, 'shelves'), newShelfData)
-      .then(() => {
-        toast({ title: "Estante creado", description: `El estante "${values.name}" ha sido creado.` });
-      })
-      .catch((error) => {
-        console.error("Error creating shelf: ", error);
-        toast({ variant: "destructive", title: "Error", description: "No se pudo crear el estante. Revisa los permisos." });
-      })
-      .finally(() => {
-          setIsCreatingShelf(false);
-      });
+    addDocumentNonBlocking(collection(firestore, 'shelves'), newShelfData);
+    toast({ title: "Estante creado", description: `El estante "${values.name}" ha sido creado.` });
+    setIsSubmitting(false);
+    setIsCreateDialogOpen(false);
   };
 
-  const handleUpdateShelf = async (values: Pick<ShelfFormValues, 'name' | 'capacity'>) => {
+  const handleUpdateShelf = async (values: ShelfFormValues) => {
     if (!editingShelf) return;
-    setIsUpdatingShelf(true);
+    setIsSubmitting(true);
     
     const shelfRef = doc(firestore, 'shelves', editingShelf.id);
     
     updateDocumentNonBlocking(shelfRef, {
       name: values.name,
-      capacity: values.capacity
+      capacity: values.capacity,
+      type: values.type,
     });
 
     toast({ title: "Estante actualizado", description: `El estante "${values.name}" ha sido actualizado.` });
-    setIsUpdatingShelf(false);
+    setIsSubmitting(false);
     setEditingShelf(null);
+  };
+
+  const handleDeleteShelf = (shelf: Shelf) => {
+    if (shelf.itemCount > 0) {
+      toast({
+        variant: "destructive",
+        title: "Acción no permitida",
+        description: "No se puede eliminar un estante que contiene dispositivos.",
+      });
+      return;
+    }
+    const shelfRef = doc(firestore, 'shelves', shelf.id);
+    deleteDocumentNonBlocking(shelfRef);
+    toast({
+      title: "Estante eliminado",
+      description: `El estante "${shelf.name}" ha sido eliminado.`,
+    });
   };
   
   return (
@@ -171,26 +210,35 @@ export function ShelvesManagementPage() {
           Gestión de Estantes
         </h2>
         <p className="text-muted-foreground text-sm">
-          Crea nuevos estantes para organizar tu inventario y edita los existentes.
+          Crea nuevos estantes para organizar tu inventario, edita los existentes o elimínalos.
         </p>
       </div>
 
       <Card>
-        <CardHeader>
-            <CardTitle className="flex items-center gap-2">Crear Nuevo Estante</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ShelfForm
-              onSubmit={handleCreateShelf}
-              isSubmitting={isCreatingShelf}
-              submitText="Crear Estante"
-          />
-        </CardContent>
-      </Card>
-      
-      <Card>
-          <CardHeader>
-              <CardTitle>Estantes Existentes</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Estantes Existentes</CardTitle>
+                <CardDescription>Visualiza y administra tus estantes.</CardDescription>
+              </div>
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogTrigger asChild>
+                    <Button>
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Crear Estante
+                    </Button>
+                </DialogTrigger>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Crear Nuevo Estante</DialogTitle>
+                    </DialogHeader>
+                    <ShelfForm
+                        onSubmit={handleCreateShelf}
+                        onClose={() => setIsCreateDialogOpen(false)}
+                        isSubmitting={isSubmitting}
+                        submitText="Crear Estante"
+                    />
+                </DialogContent>
+              </Dialog>
           </CardHeader>
           <CardContent>
           {isLoadingShelves ? (
@@ -199,7 +247,7 @@ export function ShelvesManagementPage() {
                     </div>
                 ) : shelves && shelves.length > 0 ? (
                     <div className="border rounded-md">
-                        {shelves.map((shelf, index) => (
+                        {shelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map((shelf, index) => (
                             <div key={shelf.id} className={`flex justify-between items-center p-3 ${index < shelves.length -1 ? 'border-b' : ''}`}>
                                 <div>
                                     <p className="font-medium">{shelf.name}</p>
@@ -207,16 +255,54 @@ export function ShelvesManagementPage() {
                                         {shelf.itemCount}/{shelf.capacity} {shelf.type.toUpperCase()}s
                                     </p>
                                 </div>
-                                <Button variant="ghost" size="icon" onClick={() => setEditingShelf(shelf)}>
-                                    <Edit className="h-4 w-4"/>
-                                    <span className="sr-only">Editar estante {shelf.name}</span>
-                                </Button>
+                                <div className='flex items-center gap-1'>
+                                    <Button variant="ghost" size="icon" onClick={() => setEditingShelf(shelf)}>
+                                        <Edit className="h-4 w-4"/>
+                                        <span className="sr-only">Editar estante {shelf.name}</span>
+                                    </Button>
+
+                                    <AlertDialog>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <div className={shelf.itemCount > 0 ? 'cursor-not-allowed' : ''}>
+                                            <AlertDialogTrigger asChild>
+                                                <Button variant="ghost" size="icon" disabled={shelf.itemCount > 0}>
+                                                    <Trash2 className="h-4 w-4 text-destructive/80"/>
+                                                    <span className="sr-only">Eliminar estante {shelf.name}</span>
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                          </div>
+                                        </TooltipTrigger>
+                                        {shelf.itemCount > 0 && (
+                                            <TooltipContent>
+                                                <p>No se puede eliminar un estante con items.</p>
+                                            </TooltipContent>
+                                        )}
+                                      </Tooltip>
+                                      <AlertDialogContent>
+                                          <AlertDialogHeader>
+                                              <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                                              <AlertDialogDescription>
+                                                  Esta acción es permanente y no se puede deshacer. Se eliminará el estante <strong>{shelf.name}</strong>.
+                                              </AlertDialogDescription>
+                                          </AlertDialogHeader>
+                                          <AlertDialogFooter>
+                                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                              <AlertDialogAction 
+                                                className="bg-destructive hover:bg-destructive/90"
+                                                onClick={() => handleDeleteShelf(shelf)}>
+                                                  Sí, eliminar
+                                              </AlertDialogAction>
+                                          </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                </div>
                             </div>
                         ))}
                     </div>
                 ) : (
                     <p className="text-center text-sm text-muted-foreground py-8">
-                        No hay estantes creados.
+                        No hay estantes creados. Haz clic en "Crear Estante" para empezar.
                     </p>
                 )}
           </CardContent>
@@ -226,20 +312,20 @@ export function ShelvesManagementPage() {
       <Dialog open={!!editingShelf} onOpenChange={(open) => !open && setEditingShelf(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar Estante</DialogTitle>
+            <DialogTitle>Editar Estante: {editingShelf?.name}</DialogTitle>
             <DialogDescription>
-              Modifica el nombre y la capacidad del estante. El tipo no se puede cambiar.
+              Modifica el nombre, capacidad o tipo del estante. El tipo solo se puede cambiar si el estante está vacío.
             </DialogDescription>
           </DialogHeader>
-          <div className="pt-4">
             <ShelfForm
                 shelf={editingShelf ? { name: editingShelf.name, capacity: editingShelf.capacity, type: editingShelf.type } : undefined}
                 onSubmit={handleUpdateShelf}
-                isSubmitting={isUpdatingShelf}
+                onClose={() => setEditingShelf(null)}
+                isSubmitting={isSubmitting}
                 submitText="Guardar Cambios"
                 isEdit={true}
+                itemCount={editingShelf?.itemCount}
             />
-          </div>
         </DialogContent>
       </Dialog>
     </section>
