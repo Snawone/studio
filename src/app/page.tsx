@@ -31,10 +31,11 @@ export default function Home() {
   const renderActiveView = () => {
     const onuFinderProps = {
         onDataChange: handleDataChange,
-        initialData: data,
-        initialRemovedOnus: removedOnus,
-        initialSearchList: searchList,
-        onDataLoaded: setIsDataLoaded
+        data: data,
+        removedOnus: removedOnus,
+        searchList: searchList,
+        onDataLoaded: setIsDataLoaded,
+        isDataLoaded: isDataLoaded
     };
 
     switch (activeView) {

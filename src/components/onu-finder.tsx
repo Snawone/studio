@@ -53,26 +53,27 @@ import { es } from 'date-fns/locale';
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
     onDataChange: (data: OnuData[], removed: OnuData[], search: OnuData[]) => void;
-    initialData: OnuData[];
-    initialRemovedOnus: OnuData[];
-    initialSearchList: OnuData[];
+    data: OnuData[];
+    removedOnus: OnuData[];
+    searchList: OnuData[];
     onDataLoaded: (loaded: boolean) => void;
+    isDataLoaded: boolean;
 }
 
 export function OnuFinder({ 
   activeView, 
   onDataChange, 
-  initialData: data, 
-  initialRemovedOnus: removedOnus, 
-  initialSearchList: searchList,
-  onDataLoaded
+  data, 
+  removedOnus, 
+  searchList,
+  onDataLoaded,
+  isDataLoaded
 }: OnuFinderProps) {
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
 
   const [fileName, setFileName] = useState<string | null>(null);
-  const [isDataLoadedInternal, setIsDataLoadedInternal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,7 +119,6 @@ export function OnuFinder({
           const parsedSearchList = savedSearchList ? JSON.parse(savedSearchList) : [];
 
           onDataChange(parsedData, parsedRemovedOnus, parsedSearchList);
-          setIsDataLoadedInternal(true);
           onDataLoaded(true);
         }
         setIsLoading(false);
@@ -133,7 +133,7 @@ export function OnuFinder({
 
   // This effect handles saving data to localStorage whenever it changes.
   useEffect(() => {
-    if (!isHydrating && isDataLoadedInternal && selectedSheet) {
+    if (!isHydrating && isDataLoaded && selectedSheet) {
       try {
         localStorage.setItem(`onuData_${selectedSheet}`, JSON.stringify(data));
         localStorage.setItem(`onuRemovedData_${selectedSheet}`, JSON.stringify(removedOnus));
@@ -142,30 +142,37 @@ export function OnuFinder({
         console.error("Failed to save data to localStorage", e);
       }
     }
-  }, [data, removedOnus, searchList, selectedSheet, isHydrating, isDataLoadedInternal]);
+  }, [data, removedOnus, searchList, selectedSheet, isHydrating, isDataLoaded]);
 
   // This effect handles changing sheets.
   useEffect(() => {
-    if (workbook && selectedSheet && !isHydrating) {
-        // Check if data for this sheet is already in localStorage from this session
-        const savedData = localStorage.getItem(`onuData_${selectedSheet}`);
-        const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
+    if (workbook && selectedSheet && !isHydrating && isDataLoaded) {
+      const savedData = localStorage.getItem(`onuData_${selectedSheet}`);
+      const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
   
-        if (savedData && savedRemovedOnus) {
-            const newData = JSON.parse(savedData);
-            const newRemoved = JSON.parse(savedRemovedOnus);
-            onDataChange(newData, newRemoved, searchList);
-        } else {
-            // If not, parse it from the workbook
-            parseSheetData(workbook, selectedSheet);
-        }
-        localStorage.setItem('onuSelectedSheet', selectedSheet);
+      if (savedData && savedRemovedOnus) {
+          const newData = JSON.parse(savedData);
+          const newRemoved = JSON.parse(savedRemovedOnus);
+          onDataChange(newData, newRemoved, searchList);
+      } else {
+          parseSheetData(workbook, selectedSheet, true); // Force parse for new sheet
+      }
+      localStorage.setItem('onuSelectedSheet', selectedSheet);
     }
-  }, [workbook, selectedSheet, isHydrating]);
+  }, [selectedSheet]);
 
 
-  const parseSheetData = (wb: XLSX.WorkBook, sheetName: string) => {
+  const parseSheetData = (wb: XLSX.WorkBook, sheetName: string, forceParse = false) => {
     try {
+        if (!forceParse) {
+            const savedData = localStorage.getItem(`onuData_${sheetName}`);
+            const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${sheetName}`);
+            if (savedData && savedRemovedOnus) {
+                onDataChange(JSON.parse(savedData), JSON.parse(savedRemovedOnus), []);
+                return;
+            }
+        }
+
         const worksheet = wb.Sheets[sheetName];
         const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
 
@@ -209,31 +216,36 @@ export function OnuFinder({
   const handleFile = (file: File, fileContent: string | ArrayBuffer) => {
     try {
         const wb = XLSX.read(fileContent, { type: 'binary' });
-        setWorkbook(wb);
-        const sheets = wb.SheetNames;
-        setSheetNames(sheets);
-        setFileName(file.name);
-        
-        const firstSheet = sheets[0];
-        setSelectedSheet(firstSheet);
         
         // Clear all local storage for the previous file
         const oldFileName = localStorage.getItem('onuFileName');
         if(oldFileName){
             const oldFileContent = localStorage.getItem('onuFileContent');
             if(oldFileContent){
-                const oldWb = XLSX.read(oldFileContent, {type: 'binary'});
-                oldWb.SheetNames.forEach(sheet => {
-                    localStorage.removeItem(`onuData_${sheet}`);
-                    localStorage.removeItem(`onuRemovedData_${sheet}`);
-                });
+                try {
+                    const oldWb = XLSX.read(oldFileContent, {type: 'binary'});
+                    oldWb.SheetNames.forEach(sheet => {
+                        localStorage.removeItem(`onuData_${sheet}`);
+                        localStorage.removeItem(`onuRemovedData_${sheet}`);
+                    });
+                } catch (e) {
+                    console.error("Could not parse old workbook to clear storage, clearing all storage.", e);
+                    localStorage.clear(); // Fallback
+                }
             }
         }
         localStorage.removeItem('onuSearchList');
         
-        parseSheetData(wb, firstSheet);
+        const sheets = wb.SheetNames;
+        const firstSheet = sheets[0];
+
+        setWorkbook(wb);
+        setSheetNames(sheets);
+        setFileName(file.name);
+        setSelectedSheet(firstSheet);
         
-        setIsDataLoadedInternal(true);
+        parseSheetData(wb, firstSheet, true);
+        
         onDataLoaded(true);
         setError(null);
         
@@ -313,7 +325,9 @@ export function OnuFinder({
         };
         const newData = data.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
         const newRemoved = [retiredOnu, ...removedOnus];
-        onDataChange(newData, newRemoved, searchList);
+        // Also remove from search list if it's there
+        const newSearchList = searchList.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
+        onDataChange(newData, newRemoved, newSearchList);
     }
     setIsConfirmRetireOpen(false);
     setOnuToManage(null);
@@ -360,7 +374,9 @@ export function OnuFinder({
     if (isInList) {
       newSearchList = searchList.filter(item => item['ONU ID'] !== onu['ONU ID']);
     } else {
-      newSearchList = [onu, ...searchList];
+      // Create a deep copy to prevent state corruption
+      const onuCopy = JSON.parse(JSON.stringify(onu));
+      newSearchList = [onuCopy, ...searchList];
     }
     onDataChange(data, removedOnus, newSearchList);
   };
@@ -377,7 +393,7 @@ export function OnuFinder({
     const shelfMap: Record<string, OnuData[]> = {};
     const sourceData = activeView === 'activas' ? data : [];
     
-    if (activeView === 'activas') {
+    if (activeView === 'activas' && sourceData) {
         sourceData.forEach(onu => {
             const shelf = onu.Shelf || 'Sin Estante';
             if (!shelfMap[shelf]) {
@@ -390,6 +406,7 @@ export function OnuFinder({
   }, [data, activeView]);
 
   const allShelves = useMemo(() => {
+    if (!data) return [];
     const uniqueShelves = new Set(data.map(onu => onu.Shelf));
     return Array.from(uniqueShelves).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [data]);
@@ -401,7 +418,6 @@ export function OnuFinder({
     setSelectedSheet('');
     onDataChange([], [], []);
     setFileName(null);
-    setIsDataLoadedInternal(false);
     onDataLoaded(false);
     setError(null);
     setSearchTerm('');
@@ -558,7 +574,7 @@ export function OnuFinder({
 
   const renderSearchResults = () => (
     <div className="space-y-4">
-        {filteredResults.length > 0 ? (
+        {filteredResults && filteredResults.length > 0 ? (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
                {filteredResults.map((onu, index) => renderOnuCard(onu, index, activeView === 'retiradas'))}
            </div>
@@ -605,7 +621,7 @@ export function OnuFinder({
 
   const renderRemovedList = () => (
       <div className="space-y-4">
-        {filteredResults.length > 0 ? (
+        {filteredResults && filteredResults.length > 0 ? (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
                {filteredResults.map((onu, index) => renderOnuCard(onu, index, true))}
            </div>
@@ -634,7 +650,7 @@ export function OnuFinder({
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
-      {!isDataLoadedInternal ? (
+      {!isDataLoaded ? (
         <Card className="text-center max-w-xl mx-auto">
           <CardHeader>
             <div className="mx-auto bg-secondary p-3 rounded-full w-fit">
