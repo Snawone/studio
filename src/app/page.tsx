@@ -5,12 +5,33 @@ import { useState } from 'react';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
-import { Boxes, Trash2, Settings } from 'lucide-react';
+import { Boxes, Trash2, Settings, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OptionsPage } from '@/components/options-page';
+import { HistoryPage } from '@/components/history-page';
+import { type OnuData } from '@/lib/data';
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<'activas' | 'retiradas' | 'opciones'>('activas');
+  const [activeView, setActiveView] = useState<'activas' | 'retiradas' | 'opciones' | 'historial'>('activas');
+  const [allOnus, setAllOnus] = useState<OnuData[]>([]);
+
+  const handleDataChange = (data: OnuData[], removed: OnuData[]) => {
+    setAllOnus([...data, ...removed]);
+  };
+
+  const renderActiveView = () => {
+    switch (activeView) {
+      case 'activas':
+      case 'retiradas':
+        return <OnuFinder activeView={activeView} onDataChange={handleDataChange} />;
+      case 'opciones':
+        return <OptionsPage />;
+      case 'historial':
+        return <HistoryPage allOnus={allOnus} />;
+      default:
+        return <OnuFinder activeView="activas" onDataChange={handleDataChange} />;
+    }
+  }
 
   return (
     <SidebarProvider>
@@ -38,6 +59,12 @@ export default function Home() {
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
+              <SidebarMenuButton onClick={() => setActiveView('historial')} isActive={activeView === 'historial'} tooltip={{children: 'Historial'}}>
+                <History />
+                Historial
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => setActiveView('opciones')} isActive={activeView === 'opciones'} tooltip={{children: 'Opciones'}}>
                     <Settings />
                     Opciones
@@ -62,11 +89,9 @@ export default function Home() {
           </div>
         </header>
         <main className="container mx-auto px-4 py-8 md:px-6 md:py-12">
-            {activeView === 'opciones' ? <OptionsPage /> : <OnuFinder activeView={activeView} />}
+            {renderActiveView()}
         </main>
       </SidebarInset>
     </SidebarProvider>
   );
 }
-
-    

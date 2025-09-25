@@ -52,9 +52,10 @@ import { es } from 'date-fns/locale';
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
+    onDataChange: (data: OnuData[], removed: OnuData[]) => void;
 }
 
-export function OnuFinder({ activeView }: OnuFinderProps) {
+export function OnuFinder({ activeView, onDataChange }: OnuFinderProps) {
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
@@ -98,11 +99,14 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
           setSelectedSheet(sheetToLoad);
           
           const savedData = localStorage.getItem(`onuData_${sheetToLoad}`);
-          setData(savedData ? JSON.parse(savedData) : []);
+          const parsedData = savedData ? JSON.parse(savedData) : [];
+          setData(parsedData);
 
           const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${sheetToLoad}`);
-          setRemovedOnus(savedRemovedOnus ? JSON.parse(savedRemovedOnus) : []);
-
+          const parsedRemovedOnus = savedRemovedOnus ? JSON.parse(savedRemovedOnus) : [];
+          setRemovedOnus(parsedRemovedOnus);
+          
+          onDataChange(parsedData, parsedRemovedOnus);
           setIsDataLoaded(true);
         }
         setIsLoading(false);
@@ -141,6 +145,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
       try {
         localStorage.setItem(`onuData_${selectedSheet}`, JSON.stringify(data));
         localStorage.setItem(`onuRemovedData_${selectedSheet}`, JSON.stringify(removedOnus));
+        onDataChange(data, removedOnus);
       } catch (e) {
         console.error("Failed to save data to localStorage", e);
       }
