@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo, useTransition, useRef } from "react";
+import { useState, useMemo, useTransition, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { type OnuData } from "@/lib/data";
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,27 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { 
+    Dialog, 
+    DialogContent, 
+    DialogHeader, 
+    DialogTitle, 
+    DialogTrigger, 
+    DialogFooter,
+    DialogClose
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, Trash2, PlusCircle, XCircle } from "lucide-react";
+import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
@@ -40,6 +58,39 @@ export function OnuFinder() {
   const [newOnuId, setNewOnuId] = useState('');
   const [newOnuShelf, setNewOnuShelf] = useState('');
   const [isAddOnuOpen, setIsAddOnuOpen] = useState(false);
+
+  const [onuToManage, setOnuToManage] = useState<OnuData | null>(null);
+  const [isConfirmRetireOpen, setIsConfirmRetireOpen] = useState(false);
+  const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedData = localStorage.getItem('onuData');
+      const savedRemovedOnus = localStorage.getItem('onuRemovedData');
+      const savedFileName = localStorage.getItem('onuFileName');
+      if (savedData && savedFileName) {
+        setData(JSON.parse(savedData));
+        setRemovedOnus(savedRemovedOnus ? JSON.parse(savedRemovedOnus) : []);
+        setFileName(savedFileName);
+        setIsDataLoaded(true);
+      }
+    } catch (e) {
+      console.error("Failed to load data from localStorage", e);
+      localStorage.clear();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isDataLoaded) {
+      try {
+        localStorage.setItem('onuData', JSON.stringify(data));
+        localStorage.setItem('onuRemovedData', JSON.stringify(removedOnus));
+        localStorage.setItem('onuFileName', fileName || '');
+      } catch (e) {
+        console.error("Failed to save data to localStorage", e);
+      }
+    }
+  }, [data, removedOnus, fileName, isDataLoaded]);
 
 
   const handleFileParse = (file: File) => {
@@ -84,6 +135,7 @@ export function OnuFinder() {
         }
         
         setData(newOnuData);
+        setRemovedOnus([]);
         setFileName(file.name);
         setIsDataLoaded(true);
         setError(null);
@@ -131,11 +183,24 @@ export function OnuFinder() {
     }
   };
 
-  const handleRemoveOnu = (onuToRemove: OnuData) => {
-    setData(prevData => prevData.filter(onu => onu['ONU ID'] !== onuToRemove['ONU ID']));
-    setRemovedOnus(prevRemoved => [onuToRemove, ...prevRemoved]);
+  const handleConfirmRetire = () => {
+    if (onuToManage) {
+        setData(prevData => prevData.filter(onu => onu['ONU ID'] !== onuToManage['ONU ID']));
+        setRemovedOnus(prevRemoved => [onuToManage, ...prevRemoved]);
+    }
+    setIsConfirmRetireOpen(false);
+    setOnuToManage(null);
   };
   
+  const handleConfirmRestore = () => {
+    if (onuToManage) {
+      setRemovedOnus(prevRemoved => prevRemoved.filter(onu => onu['ONU ID'] !== onuToManage['ONU ID']));
+      setData(prevData => [onuToManage, ...prevData]);
+    }
+    setIsConfirmRestoreOpen(false);
+    setOnuToManage(null);
+  };
+
   const handleAddOnu = () => {
       if(!newOnuId || !newOnuShelf) {
           alert("Por favor completa ambos campos.");
@@ -189,50 +254,75 @@ export function OnuFinder() {
     if(fileInputRef.current) {
         fileInputRef.current.value = '';
     }
+    localStorage.removeItem('onuData');
+    localStorage.removeItem('onuRemovedData');
+    localStorage.removeItem('onuFileName');
   };
 
   const renderOnuCard = (row: OnuData, index: number) => (
-    <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className="relative group">
-      <CardHeader>
-        <CardTitle className="flex items-center text-base text-primary break-all">
-          <Tag className="mr-2 h-4 w-4 flex-shrink-0"/>
-          {row['ONU ID']}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="flex items-center text-sm font-medium">
-          <Server className="mr-2 h-4 w-4 text-muted-foreground" />
-          <span className="text-muted-foreground mr-2">Estante:</span> 
-          <span className="font-bold text-foreground">{row.Shelf}</span>
-        </p>
-      </CardContent>
-      <Button 
-        variant="ghost" 
-        size="icon" 
-        className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-        onClick={() => handleRemoveOnu(row)}
-        title="Marcar como retirada"
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
+    <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className="group flex flex-col justify-between">
+      <div>
+        <CardHeader>
+          <CardTitle className="flex items-center text-base text-primary break-all">
+            <Tag className="mr-2 h-4 w-4 flex-shrink-0"/>
+            {row['ONU ID']}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="flex items-center text-sm font-medium">
+            <Server className="mr-2 h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground mr-2">Estante:</span> 
+            <span className="font-bold text-foreground">{row.Shelf}</span>
+          </p>
+        </CardContent>
+      </div>
+      <CardFooter className="p-4">
+        <Button 
+          variant="outline"
+          size="sm"
+          className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
+          onClick={() => {
+            setOnuToManage(row);
+            setIsConfirmRetireOpen(true);
+          }}
+        >
+          Retirar
+        </Button>
+      </CardFooter>
     </Card>
   );
 
  const renderRemovedOnuCard = (row: OnuData, index: number) => (
-    <Card key={`removed-${row.Shelf}-${row['ONU ID']}-${index}`} className="bg-muted/50">
-      <CardHeader>
-        <CardTitle className="flex items-center text-base text-muted-foreground break-all">
-          <XCircle className="mr-2 h-4 w-4 flex-shrink-0"/>
-          {row['ONU ID']}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="flex items-center text-sm font-medium">
-          <Server className="mr-2 h-4 w-4 text-muted-foreground/70" />
-          <span className="text-muted-foreground/70 mr-2">Estante:</span> 
-          <span className="font-bold text-muted-foreground">{row.Shelf}</span>
-        </p>
-      </CardContent>
+    <Card key={`removed-${row.Shelf}-${row['ONU ID']}-${index}`} className="bg-muted/50 flex flex-col justify-between">
+      <div>
+        <CardHeader>
+          <CardTitle className="flex items-center text-base text-muted-foreground break-all">
+            <Tag className="mr-2 h-4 w-4 flex-shrink-0"/>
+            {row['ONU ID']}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="flex items-center text-sm font-medium">
+            <Server className="mr-2 h-4 w-4 text-muted-foreground/70" />
+            <span className="text-muted-foreground/70 mr-2">Estante:</span> 
+            <span className="font-bold text-muted-foreground">{row.Shelf}</span>
+          </p>
+        </CardContent>
+      </div>
+      <CardFooter className="p-4">
+        <Button 
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            setOnuToManage(row);
+            setIsConfirmRestoreOpen(true);
+          }}
+        >
+          <RotateCcw className="mr-2 h-4 w-4" />
+          Devolver
+        </Button>
+      </CardFooter>
     </Card>
  );
 
@@ -300,7 +390,7 @@ export function OnuFinder() {
             </div>
             <CardTitle className="font-headline mt-4">Importar Hoja de Cálculo</CardTitle>
             <CardDescription>
-              Sube tu archivo de Excel o CSV, o pega un enlace para empezar a buscar tus ONUs.
+              Sube tu archivo de Excel o CSV, o pega un enlace para empezar a buscar tus ONUs. Los datos se guardarán en tu navegador.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
@@ -387,11 +477,14 @@ export function OnuFinder() {
                                 </div>
                             </div>
                             <DialogFooter>
+                                <DialogClose asChild>
+                                  <Button variant="outline">Cancelar</Button>
+                                </DialogClose>
                                 <Button onClick={handleAddOnu}>Guardar ONU</Button>
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
-                    <Button variant="outline" size="sm" onClick={resetState}>
+                    <Button variant="destructive" size="sm" onClick={resetState}>
                         Cargar otro archivo
                     </Button>
                 </div>
@@ -458,8 +551,42 @@ export function OnuFinder() {
           </Tabs>
         </>
       )}
+
+      {/* Confirmation Dialogs */}
+      <AlertDialog open={isConfirmRetireOpen} onOpenChange={setIsConfirmRetireOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción marcará la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirada. Podrás devolverla al inventario más tarde desde la pestaña "Retiradas".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setOnuToManage(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmRetire} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Sí, retirar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      <AlertDialog open={isConfirmRestoreOpen} onOpenChange={setIsConfirmRestoreOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Confirmar devolución?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción devolverá la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activas en el estante <strong>{onuToManage?.Shelf}</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setOnuToManage(null)}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmRestore}>
+              Sí, devolver
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </section>
   );
 }
-
-    
