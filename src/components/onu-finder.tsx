@@ -46,9 +46,11 @@ import {
 } from "@/components/ui/select";
 import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2, Calendar as CalendarIcon, Trash2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { SidebarTrigger } from "./ui/sidebar";
+import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { Icons } from '@/components/icons';
+import { Boxes } from 'lucide-react';
 
 
 type OnuFinderProps = {
@@ -160,7 +162,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
         
         const headers = sheetData[0].map(h => String(h || '').trim());
         const newOnuData: OnuData[] = [];
-        const currentDate = new Date().toISOString();
+        const fileProcessDate = new Date().toISOString();
 
         for (let colIndex = 0; colIndex < headers.length; colIndex++) {
             const shelf = headers[colIndex];
@@ -173,7 +175,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
                             newOnuData.push({
                                 'Shelf': shelf,
                                 'ONU ID': String(onuId),
-                                addedDate: currentDate,
+                                addedDate: fileProcessDate,
                             });
                         }
                     }
@@ -738,3 +740,5 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     </section>
   );
 }
+
+    
