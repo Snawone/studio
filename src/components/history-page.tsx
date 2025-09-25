@@ -18,8 +18,8 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredOnus = useMemo(() => {
+    if (!allOnus) return [];
     if (!searchTerm) {
-      // Ordenar por la fecha del evento más reciente en el historial
       return [...allOnus].sort((a, b) => {
         const lastEventA = a.history?.[a.history.length - 1]?.date;
         const lastEventB = b.history?.[b.history.length - 1]?.date;
@@ -84,7 +84,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
               <Input
                 id="search-term"
                 type="text"
-                placeholder={`Buscar entre ${allOnus.length} ONUs...`}
+                placeholder={`Buscar entre ${allOnus?.length || 0} ONUs...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 w-full"
@@ -97,7 +97,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
       <div className="space-y-6">
         {filteredOnus.length > 0 ? (
           filteredOnus.map((onu) => (
-            <Card key={onu['ONU ID']} className="overflow-hidden">
+            <Card key={onu.id} className="overflow-hidden">
               <CardHeader className="flex flex-row justify-between items-start bg-muted/30">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base font-mono">
@@ -109,7 +109,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
                         <Server className="h-4 w-4" />
                         <span className="font-medium">{onu.Shelf}</span>
                      </span>
-                     {onu.removedDate ? (
+                     {onu.status === 'removed' ? (
                         <Badge variant="destructive">Retirada</Badge>
                      ) : (
                         <Badge variant="secondary" className="bg-green-100 text-green-800">Activa</Badge>

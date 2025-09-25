@@ -18,78 +18,57 @@ import {
 } from "@/components/ui/alert-dialog";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useFirestore } from '@/firebase';
+import { writeBatch, doc } from 'firebase/firestore';
 
 type SearchListPageProps = {
   searchList: OnuData[];
-  onDataChange: (data: OnuData[], removed: OnuData[], search: OnuData[]) => void;
-  allActiveOnus: OnuData[];
-  allRemovedOnus: OnuData[];
+  userId: string;
 }
 
-export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRemovedOnus }: SearchListPageProps) {
+export function SearchListPage({ searchList, userId }: SearchListPageProps) {
+  const firestore = useFirestore();
   const [onuToRetire, setOnuToRetire] = useState<OnuData | null>(null);
   const [isConfirmRetireAllOpen, setIsConfirmRetireAllOpen] = useState(false);
 
   const handleRemoveFromSearchList = (onuId: string) => {
-    const newSearchList = searchList.filter(onu => onu['ONU ID'] !== onuId);
-    onDataChange(allActiveOnus, allRemovedOnus, newSearchList);
+    const docRef = doc(firestore, 'users', userId, 'onus', onuId);
+    const batch = writeBatch(firestore);
+    batch.update(docRef, { inSearch: false });
+    batch.commit();
   };
   
   const handleRetireOnu = (onuToRetire: OnuData) => {
     const removedDate = new Date().toISOString();
-    
-    // Create new lists to avoid direct mutation
-    let newActiveOnus = [...allActiveOnus];
-    let newRemovedOnus = [...allRemovedOnus];
+    const docRef = doc(firestore, 'users', userId, 'onus', onuToRetire.id);
+    const batch = writeBatch(firestore);
 
-    const isAlreadyRemoved = newRemovedOnus.some(o => o['ONU ID'] === onuToRetire['ONU ID']);
+    batch.update(docRef, {
+      status: 'removed',
+      inSearch: false,
+      removedDate: removedDate,
+      history: [...(onuToRetire.history || []), { action: 'removed', date: removedDate }]
+    });
 
-    // Only move from active to removed if it's not already removed
-    if (!isAlreadyRemoved) {
-        const completeOnuData = allActiveOnus.find(o => o['ONU ID'] === onuToRetire['ONU ID']) || onuToRetire;
-        
-        const retiredOnu: OnuData = { 
-            ...completeOnuData, 
-            removedDate,
-            history: [...(completeOnuData.history || []), { action: 'removed', date: removedDate }]
-        };
-        
-        newActiveOnus = newActiveOnus.filter(onu => onu['ONU ID'] !== onuToRetire['ONU ID']);
-        newRemovedOnus = [retiredOnu, ...newRemovedOnus];
-    }
-
-    // Always remove from search list
-    const newSearchList = searchList.filter(onu => onu['ONU ID'] !== onuToRetire['ONU ID']);
-    
-    onDataChange(newActiveOnus, newRemovedOnus, newSearchList);
+    batch.commit();
     setOnuToRetire(null);
   };
 
   const handleRetireAll = () => {
     const date = new Date().toISOString();
-    let activeOnusCopy = [...allActiveOnus];
-    let removedOnusCopy = [...allRemovedOnus];
+    const batch = writeBatch(firestore);
 
     searchList.forEach(onuInSearch => {
-      // Find the full data for the ONU from either active or removed list
-      const originalOnu = activeOnusCopy.find(o => o['ONU ID'] === onuInSearch['ONU ID']);
-
-      // Only process if it's currently in the active list
-      if (originalOnu) {
-          const retiredOnu: OnuData = {
-              ...originalOnu,
-              removedDate: date,
-              history: [...(originalOnu.history || []), { action: 'removed', date }]
-          };
-          
-          // Remove from active
-          activeOnusCopy = activeOnusCopy.filter(o => o['ONU ID'] !== onuInSearch['ONU ID']);
-          // Add to removed
-          removedOnusCopy.unshift(retiredOnu);
-      }
+      const docRef = doc(firestore, 'users', userId, 'onus', onuInSearch.id);
+      batch.update(docRef, {
+        status: 'removed',
+        inSearch: false,
+        removedDate: date,
+        history: [...(onuInSearch.history || []), { action: 'removed', date }]
+      });
     });
     
-    onDataChange(activeOnusCopy, removedOnusCopy, []);
+    batch.commit();
     setIsConfirmRetireAllOpen(false);
   }
 
@@ -127,7 +106,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
         {searchList.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {searchList.map((onu) => (
-              <Card key={onu['ONU ID']} className="flex flex-col justify-between">
+              <Card key={onu.id} className="flex flex-col justify-between">
                 <div>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base font-mono break-all">
@@ -139,7 +118,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
                             <Server className="h-4 w-4" />
                             <span className="font-medium">{onu.Shelf}</span>
                             </span>
-                            {allRemovedOnus.some(o => o['ONU ID'] === onu['ONU ID']) ? (
+                            {onu.status === 'removed' ? (
                             <Badge variant="destructive">Retirada</Badge>
                             ) : (
                             <Badge variant="secondary" className="bg-green-100 text-green-800">Activa</Badge>
@@ -166,7 +145,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
                     variant="outline"
                     size="sm"
                     className="w-full"
-                    onClick={() => handleRemoveFromSearchList(onu['ONU ID'])}
+                    onClick={() => handleRemoveFromSearchList(onu.id)}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Quitar

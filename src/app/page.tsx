@@ -1,61 +1,94 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { collection, query, where } from 'firebase/firestore';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
-import { Boxes, Trash2, Settings, History, SearchCheck } from 'lucide-react';
+import { Boxes, Trash2, Settings, History, SearchCheck, Loader2 } from 'lucide-react';
 import { OptionsPage } from '@/components/options-page';
 import { HistoryPage } from '@/components/history-page';
 import { SearchListPage } from '@/components/search-list-page';
+import { useCollection, useFirestore, useUser, useMemoFirebase } from '@/firebase';
+import { initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
+import { useAuth } from '@/firebase/provider';
 import { type OnuData } from '@/lib/data';
 
 export default function Home() {
   const [activeView, setActiveView] = useState<'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda'>('activas');
   
-  const [data, setData] = useState<OnuData[]>([]);
-  const [removedOnus, setRemovedOnus] = useState<OnuData[]>([]);
-  const [searchList, setSearchList] = useState<OnuData[]>([]);
-  const [allOnus, setAllOnus] = useState<OnuData[]>([]);
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const { user, isUserLoading } = useUser();
+  const auth = useAuth();
+  const firestore = useFirestore();
 
-  const handleDataChange = (newData: OnuData[], newRemoved: OnuData[], newSearch: OnuData[]) => {
-    setData(newData);
-    setRemovedOnus(newRemoved);
-    setSearchList(newSearch);
-    const combined = [...newData, ...newRemoved];
-    const uniqueOnus = Array.from(new Map(combined.map(onu => [onu['ONU ID'], onu])).values());
-    setAllOnus(uniqueOnus);
-  };
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      initiateAnonymousSignIn(auth);
+    }
+  }, [user, isUserLoading, auth]);
+
+  const onusCollectionRef = useMemoFirebase(
+    () => user ? collection(firestore, 'users', user.uid, 'onus') : null,
+    [firestore, user]
+  );
+  
+  const { data: allOnus, isLoading: isOnusLoading } = useCollection<OnuData>(onusCollectionRef);
+
+  const { activeOnus, removedOnus, searchList, allShelves } = useMemo(() => {
+    if (!allOnus) {
+      return { activeOnus: [], removedOnus: [], searchList: [], allShelves: [] };
+    }
+    const active = allOnus.filter(onu => onu.status === 'active');
+    const removed = allOnus.filter(onu => onu.status === 'removed');
+    const search = allOnus.filter(onu => onu.inSearch);
+    const shelves = Array.from(new Set(active.map(onu => onu.Shelf))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    return { activeOnus: active, removedOnus: removed, searchList: search, allShelves: shelves };
+  }, [allOnus]);
+
+  if (isUserLoading || isOnusLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
 
   const renderActiveView = () => {
-    const onuFinderProps = {
-        onDataChange: handleDataChange,
-        data: data,
-        removedOnus: removedOnus,
-        searchList: searchList,
-        onDataLoaded: setIsDataLoaded,
-        isDataLoaded: isDataLoaded
-    };
-
     switch (activeView) {
       case 'activas':
-        return <OnuFinder {...onuFinderProps} activeView="activas" />;
+        return <OnuFinder 
+                  activeView="activas" 
+                  onus={activeOnus} 
+                  searchList={searchList}
+                  allShelves={allShelves}
+                  userId={user!.uid}
+                />;
       case 'retiradas':
-        return <OnuFinder {...onuFinderProps} activeView="retiradas" />;
+        return <OnuFinder 
+                  activeView="retiradas" 
+                  onus={removedOnus} 
+                  searchList={searchList}
+                  allShelves={allShelves}
+                  userId={user!.uid}
+                />;
       case 'opciones':
         return <OptionsPage />;
       case 'historial':
-        return <HistoryPage allOnus={allOnus} />;
+        return <HistoryPage allOnus={allOnus || []} />;
       case 'en-busqueda':
         return <SearchListPage 
                   searchList={searchList}
-                  onDataChange={handleDataChange}
-                  allActiveOnus={data}
-                  allRemovedOnus={removedOnus}
+                  userId={user!.uid}
                 />;
       default:
-        return <OnuFinder {...onuFinderProps} activeView="activas" />;
+        return <OnuFinder 
+                  activeView="activas" 
+                  onus={activeOnus} 
+                  searchList={searchList} 
+                  allShelves={allShelves}
+                  userId={user!.uid}
+                />;
     }
   }
 

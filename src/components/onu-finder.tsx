@@ -49,26 +49,28 @@ import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, Plus
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useFirestore } from "@/firebase";
+import { writeBatch, doc, collection } from "firebase/firestore";
+import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
-    onDataChange: (data: OnuData[], removed: OnuData[], search: OnuData[]) => void;
-    data: OnuData[];
-    removedOnus: OnuData[];
+    onus: OnuData[];
     searchList: OnuData[];
-    onDataLoaded: (loaded: boolean) => void;
-    isDataLoaded: boolean;
+    allShelves: string[];
+    userId: string;
 }
 
 export function OnuFinder({ 
   activeView, 
-  onDataChange, 
-  data, 
-  removedOnus, 
+  onus,
   searchList,
-  onDataLoaded,
-  isDataLoaded
+  allShelves,
+  userId
 }: OnuFinderProps) {
+  const firestore = useFirestore();
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
@@ -91,98 +93,29 @@ export function OnuFinder({
   const [isConfirmRetireOpen, setIsConfirmRetireOpen] = useState(false);
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
-  // This effect runs only once on mount to load data from localStorage.
   useEffect(() => {
+    const loaded = localStorage.getItem(`onusLoaded_${userId}`);
+    if (loaded) {
+        setIsDataLoaded(true);
+    }
+    setIsHydrating(false);
+  }, [userId]);
+
+
+  const parseAndUploadSheetData = async (wb: XLSX.WorkBook, sheetName: string) => {
     try {
-      const savedFileName = localStorage.getItem('onuFileName');
-      if (savedFileName) {
         setIsLoading(true);
-        const savedFileContent = localStorage.getItem('onuFileContent');
-        if (savedFileContent) {
-          const wb = XLSX.read(savedFileContent, { type: 'binary' });
-          setWorkbook(wb);
-          const sheets = wb.SheetNames;
-          setSheetNames(sheets);
-          setFileName(savedFileName);
-          
-          const savedSheet = localStorage.getItem('onuSelectedSheet');
-          const sheetToLoad = savedSheet && sheets.includes(savedSheet) ? savedSheet : sheets[0];
-          setSelectedSheet(sheetToLoad);
-          
-          const savedData = localStorage.getItem(`onuData_${sheetToLoad}`);
-          const parsedData = savedData ? JSON.parse(savedData) : [];
-          
-          const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${sheetToLoad}`);
-          const parsedRemovedOnus = savedRemovedOnus ? JSON.parse(savedRemovedOnus) : [];
-          
-          const savedSearchList = localStorage.getItem('onuSearchList');
-          const parsedSearchList = savedSearchList ? JSON.parse(savedSearchList) : [];
-
-          onDataChange(parsedData, parsedRemovedOnus, parsedSearchList);
-          onDataLoaded(true);
-        }
-        setIsLoading(false);
-      }
-    } catch (e) {
-      console.error("Failed to load data from localStorage", e);
-      resetState();
-    } finally {
-      setIsHydrating(false);
-    }
-  }, []); // Empty dependency array ensures this runs only once.
-
-  // This effect handles saving data to localStorage whenever it changes.
-  useEffect(() => {
-    if (!isHydrating && isDataLoaded && selectedSheet) {
-      try {
-        localStorage.setItem(`onuData_${selectedSheet}`, JSON.stringify(data));
-        localStorage.setItem(`onuRemovedData_${selectedSheet}`, JSON.stringify(removedOnus));
-        localStorage.setItem('onuSearchList', JSON.stringify(searchList));
-      } catch (e) {
-        console.error("Failed to save data to localStorage", e);
-      }
-    }
-  }, [data, removedOnus, searchList, selectedSheet, isHydrating, isDataLoaded]);
-
-  // This effect handles changing sheets.
-  useEffect(() => {
-    if (workbook && selectedSheet && !isHydrating && isDataLoaded) {
-      const savedData = localStorage.getItem(`onuData_${selectedSheet}`);
-      const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
-  
-      if (savedData && savedRemovedOnus) {
-          const newData = JSON.parse(savedData);
-          const newRemoved = JSON.parse(savedRemovedOnus);
-          onDataChange(newData, newRemoved, searchList);
-      } else {
-          parseSheetData(workbook, selectedSheet, true); // Force parse for new sheet
-      }
-      localStorage.setItem('onuSelectedSheet', selectedSheet);
-    }
-  }, [selectedSheet]);
-
-
-  const parseSheetData = (wb: XLSX.WorkBook, sheetName: string, forceParse = false) => {
-    try {
-        if (!forceParse) {
-            const savedData = localStorage.getItem(`onuData_${sheetName}`);
-            const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${sheetName}`);
-            if (savedData && savedRemovedOnus) {
-                onDataChange(JSON.parse(savedData), JSON.parse(savedRemovedOnus), []);
-                return;
-            }
-        }
-
         const worksheet = wb.Sheets[sheetName];
         const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
 
         if (sheetData.length < 2) {
-            onDataChange([], [], []); // Reset data for the new sheet
+            setError('La hoja de cálculo está vacía o tiene un formato incorrecto.');
+            setIsLoading(false);
             return;
         }
         
         const headers = sheetData[0].map(h => String(h || '').trim());
-        const newOnuData: OnuData[] = [];
+        const batch = writeBatch(firestore);
         const fileProcessDate = new Date().toISOString();
 
         for (let colIndex = 0; colIndex < headers.length; colIndex++) {
@@ -193,22 +126,32 @@ export function OnuFinder({
                     if(row) {
                         const onuId = row[colIndex];
                         if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
-                            newOnuData.push({
-                                'Shelf': shelf,
+                            const newOnu: OnuData = {
+                                id: String(onuId),
                                 'ONU ID': String(onuId),
+                                'Shelf': shelf,
                                 addedDate: fileProcessDate,
-                                history: [{ action: 'added', date: fileProcessDate, source: 'file' }]
-                            });
+                                history: [{ action: 'added', date: fileProcessDate, source: 'file' }],
+                                status: 'active',
+                                inSearch: false,
+                                userId: userId,
+                            };
+                            const docRef = doc(firestore, 'users', userId, 'onus', newOnu.id);
+                            batch.set(docRef, newOnu);
                         }
                     }
                 }
             }
         }
         
-        onDataChange(newOnuData, [], []); // Start fresh for the new sheet
+        await batch.commit();
+        setIsDataLoaded(true);
+        localStorage.setItem(`onusLoaded_${userId}`, 'true');
+
     } catch (err: any) {
         setError(err.message || `Error al procesar la hoja "${sheetName}".`);
-        onDataChange([], [], []);
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -216,26 +159,6 @@ export function OnuFinder({
   const handleFile = (file: File, fileContent: string | ArrayBuffer) => {
     try {
         const wb = XLSX.read(fileContent, { type: 'binary' });
-        
-        // Clear all local storage for the previous file
-        const oldFileName = localStorage.getItem('onuFileName');
-        if(oldFileName){
-            const oldFileContent = localStorage.getItem('onuFileContent');
-            if(oldFileContent){
-                try {
-                    const oldWb = XLSX.read(oldFileContent, {type: 'binary'});
-                    oldWb.SheetNames.forEach(sheet => {
-                        localStorage.removeItem(`onuData_${sheet}`);
-                        localStorage.removeItem(`onuRemovedData_${sheet}`);
-                    });
-                } catch (e) {
-                    console.error("Could not parse old workbook to clear storage, clearing all storage.", e);
-                    localStorage.clear(); // Fallback
-                }
-            }
-        }
-        localStorage.removeItem('onuSearchList');
-        
         const sheets = wb.SheetNames;
         const firstSheet = sheets[0];
 
@@ -244,20 +167,9 @@ export function OnuFinder({
         setFileName(file.name);
         setSelectedSheet(firstSheet);
         
-        parseSheetData(wb, firstSheet, true);
-        
-        onDataLoaded(true);
+        parseAndUploadSheetData(wb, firstSheet);
         setError(null);
         
-        if (typeof fileContent === 'string') {
-            localStorage.setItem('onuFileContent', fileContent);
-        } else {
-            const binaryString = new Uint8Array(fileContent).reduce((data, byte) => data + String.fromCharCode(byte), '');
-            localStorage.setItem('onuFileContent', binaryString);
-        }
-        localStorage.setItem('onuFileName', file.name);
-        localStorage.setItem('onuSelectedSheet', firstSheet);
-
     } catch (err: any) {
         setError(err.message || 'Error al procesar el archivo. Asegúrate que sea un archivo Excel válido con el formato correcto.');
     } finally {
@@ -318,16 +230,12 @@ export function OnuFinder({
   const handleConfirmRetire = () => {
     if (onuToManage) {
         const removedDate = new Date().toISOString();
-        const retiredOnu: OnuData = { 
-            ...onuToManage, 
-            removedDate,
-            history: [...(onuToManage.history || []), { action: 'removed', date: removedDate }]
-        };
-        const newData = data.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
-        const newRemoved = [retiredOnu, ...removedOnus];
-        // Also remove from search list if it's there
-        const newSearchList = searchList.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
-        onDataChange(newData, newRemoved, newSearchList);
+        const docRef = doc(firestore, 'users', userId, 'onus', onuToManage.id);
+        updateDocumentNonBlocking(docRef, {
+          status: 'removed',
+          removedDate: removedDate,
+          history: [...(onuToManage.history || []), { action: 'removed', date: removedDate }]
+        });
     }
     setIsConfirmRetireOpen(false);
     setOnuToManage(null);
@@ -336,14 +244,12 @@ export function OnuFinder({
   const handleConfirmRestore = () => {
     if (onuToManage) {
       const restoredDate = new Date().toISOString();
-      const restoredOnu: OnuData = { 
-        ...onuToManage,
+      const docRef = doc(firestore, 'users', userId, 'onus', onuToManage.id);
+      updateDocumentNonBlocking(docRef, {
+        status: 'active',
+        removedDate: null,
         history: [...(onuToManage.history || []), { action: 'restored', date: restoredDate }]
-      };
-      delete restoredOnu.removedDate;
-      const newRemoved = removedOnus.filter(onu => onu['ONU ID'] !== restoredOnu['ONU ID']);
-      const newData = [restoredOnu, ...data];
-      onDataChange(newData, newRemoved, searchList);
+      });
     }
     setIsConfirmRestoreOpen(false);
     setOnuToManage(null);
@@ -356,45 +262,40 @@ export function OnuFinder({
       }
       const addedDate = new Date().toISOString();
       const newOnu: OnuData = {
+          id: newOnuId,
           'ONU ID': newOnuId,
           'Shelf': newOnuShelf,
           addedDate: addedDate,
-          history: [{ action: 'created', date: addedDate, source: 'manual'}]
+          history: [{ action: 'created', date: addedDate, source: 'manual'}],
+          status: 'active',
+          inSearch: false,
+          userId: userId,
       };
-      const newData = [newOnu, ...data];
-      onDataChange(newData, removedOnus, searchList);
+      const docRef = doc(firestore, 'users', userId, 'onus', newOnu.id);
+      setDocumentNonBlocking(docRef, newOnu, { merge: true });
       setNewOnuId('');
       setNewOnuShelf('');
       setIsAddOnuOpen(false);
   };
 
   const handleToggleSearchList = (onu: OnuData) => {
-    const isInList = searchList.some(item => item['ONU ID'] === onu['ONU ID']);
-    let newSearchList;
-    if (isInList) {
-      newSearchList = searchList.filter(item => item['ONU ID'] !== onu['ONU ID']);
-    } else {
-      // Create a deep copy to prevent state corruption
-      const onuCopy = JSON.parse(JSON.stringify(onu));
-      newSearchList = [onuCopy, ...searchList];
-    }
-    onDataChange(data, removedOnus, newSearchList);
+    const docRef = doc(firestore, 'users', userId, 'onus', onu.id);
+    updateDocumentNonBlocking(docRef, {
+      inSearch: !onu.inSearch
+    });
   };
 
   const filteredResults = useMemo(() => {
-    const sourceData = activeView === 'activas' ? data : removedOnus;
-    if (!searchTerm) return sourceData;
-    return sourceData.filter((row) => 
+    if (!searchTerm) return onus;
+    return onus.filter((row) => 
         row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, data, removedOnus, activeView]);
+  }, [searchTerm, onus]);
   
   const shelves = useMemo(() => {
     const shelfMap: Record<string, OnuData[]> = {};
-    const sourceData = activeView === 'activas' ? data : [];
-    
-    if (activeView === 'activas' && sourceData) {
-        sourceData.forEach(onu => {
+    if (activeView === 'activas' && onus) {
+        onus.forEach(onu => {
             const shelf = onu.Shelf || 'Sin Estante';
             if (!shelfMap[shelf]) {
                 shelfMap[shelf] = [];
@@ -403,29 +304,23 @@ export function OnuFinder({
         });
     }
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [data, activeView]);
-
-  const allShelves = useMemo(() => {
-    if (!data) return [];
-    const uniqueShelves = new Set(data.map(onu => onu.Shelf));
-    return Array.from(uniqueShelves).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [data]);
-
+  }, [onus, activeView]);
 
   const resetState = () => {
+    // This will now just clear the UI state for a new upload
+    // But won't delete firebase data. A separate function would be needed for that.
+    setIsDataLoaded(false);
     setWorkbook(null);
     setSheetNames([]);
     setSelectedSheet('');
-    onDataChange([], [], []);
     setFileName(null);
-    onDataLoaded(false);
     setError(null);
     setSearchTerm('');
     setUrl('');
     if(fileInputRef.current) {
         fileInputRef.current.value = '';
     }
-    localStorage.clear();
+    localStorage.removeItem(`onusLoaded_${userId}`);
   };
   
   const formatDate = (dateString: string | undefined) => {
@@ -457,15 +352,16 @@ export function OnuFinder({
     }
   }
 
-  const renderOnuCard = (row: OnuData, index: number, isRetired = false) => {
+  const renderOnuCard = (row: OnuData, index: number) => {
+    const isRetired = row.status === 'removed';
     const isExactMatch = searchTerm.length > 0 && row['ONU ID'].toLowerCase() === searchTerm.toLowerCase();
     const onuId = row['ONU ID'];
     const idPrefix = onuId.slice(0, -6);
     const idSuffix = onuId.slice(-6);
-    const isInSearchList = searchList.some(item => item['ONU ID'] === onuId);
+    const isInSearchList = row.inSearch;
   
     return (
-      <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className={`group flex flex-col justify-between transition-all duration-300 ${isExactMatch ? 'border-primary shadow-lg scale-105' : ''} ${isInSearchList ? 'border-blue-500' : ''}`}>
+      <Card key={`${row.id}-${index}`} className={`group flex flex-col justify-between transition-all duration-300 ${isExactMatch ? 'border-primary shadow-lg scale-105' : ''} ${isInSearchList ? 'border-blue-500' : ''}`}>
         <div>
           <CardHeader className="pb-2">
              <div className="flex justify-between items-start">
@@ -576,7 +472,7 @@ export function OnuFinder({
     <div className="space-y-4">
         {filteredResults && filteredResults.length > 0 ? (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-               {filteredResults.map((onu, index) => renderOnuCard(onu, index, activeView === 'retiradas'))}
+               {filteredResults.map((onu, index) => renderOnuCard(onu, index))}
            </div>
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
@@ -603,7 +499,7 @@ export function OnuFinder({
                         </AccordionTrigger>
                         <AccordionContent>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-                                {onus.map((onu, index) => renderOnuCard(onu, index, false))}
+                                {onus.map((onu, index) => renderOnuCard(onu, index))}
                             </div>
                         </AccordionContent>
                     </AccordionItem>
@@ -623,7 +519,7 @@ export function OnuFinder({
       <div className="space-y-4">
         {filteredResults && filteredResults.length > 0 ? (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-               {filteredResults.map((onu, index) => renderOnuCard(onu, index, true))}
+               {filteredResults.map((onu, index) => renderOnuCard(onu, index))}
            </div>
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
@@ -658,14 +554,14 @@ export function OnuFinder({
             </div>
             <CardTitle className="font-headline mt-4">Importar Hoja de Cálculo</CardTitle>
             <CardDescription>
-              Sube tu archivo de Excel o CSV, o pega un enlace para empezar a buscar tus ONUs. Los datos se guardarán en tu navegador.
+              Sube tu archivo de Excel o CSV, o pega un enlace para empezar a buscar tus ONUs. Los datos se guardarán en tu cuenta.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {isLoading ? (
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Procesando archivo...</p>
+                <p className="text-sm text-muted-foreground">Procesando y guardando archivo en la nube...</p>
               </div>
             ) : (
               <>
@@ -725,7 +621,7 @@ export function OnuFinder({
                     <div className="flex items-center gap-2">
                          
                         <h2 className="text-2xl font-headline font-semibold">
-                            {activeView === 'activas' ? `Inventario de ONUs Activas (${data.length})` : `ONUs Retiradas (${removedOnus.length})`}
+                            {activeView === 'activas' ? `Inventario de ONUs Activas (${onus.length})` : `ONUs Retiradas (${onus.length})`}
                         </h2>
                     </div>
                     <p className="text-muted-foreground text-sm mt-1">
@@ -776,24 +672,31 @@ export function OnuFinder({
                     </Button>
                 </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
-                <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileName}</span></p>
-                {sheetNames.length > 1 && (
-                    <div className="flex items-center gap-2 mt-2 sm:mt-0">
-                        <Label htmlFor="sheet-selector" className="text-muted-foreground">Hoja:</Label>
-                        <Select value={selectedSheet} onValueChange={setSelectedSheet}>
-                            <SelectTrigger id="sheet-selector" className="h-8 w-auto max-w-[200px]">
-                                <SelectValue placeholder="Selecciona una hoja" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {sheetNames.map(name => (
-                                    <SelectItem key={name} value={name}>{name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                )}
-            </div>
+            {fileName && (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
+                    <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileName}</span></p>
+                    {sheetNames.length > 1 && (
+                        <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                            <Label htmlFor="sheet-selector" className="text-muted-foreground">Hoja:</Label>
+                            <Select value={selectedSheet} onValueChange={(newSheet) => {
+                                setSelectedSheet(newSheet);
+                                if (workbook) {
+                                    parseAndUploadSheetData(workbook, newSheet);
+                                }
+                            }}>
+                                <SelectTrigger id="sheet-selector" className="h-8 w-auto max-w-[200px]">
+                                    <SelectValue placeholder="Selecciona una hoja" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {sheetNames.map(name => (
+                                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
+                </div>
+            )}
          </div>
 
          <Card>
@@ -809,7 +712,7 @@ export function OnuFinder({
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${activeView === 'activas' ? data.length : removedOnus.length} ONUs...`}
+                    placeholder={`Buscar entre ${onus.length} ONUs...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
