@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -6,7 +5,6 @@ import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, S
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
 import { Boxes, Trash2, Settings, History } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { OptionsPage } from '@/components/options-page';
 import { HistoryPage } from '@/components/history-page';
 import { type OnuData } from '@/lib/data';
@@ -16,7 +14,9 @@ export default function Home() {
   const [allOnus, setAllOnus] = useState<OnuData[]>([]);
 
   const handleDataChange = (data: OnuData[], removed: OnuData[]) => {
-    setAllOnus([...data, ...removed]);
+    const combined = [...data, ...removed];
+    const uniqueOnus = Array.from(new Map(combined.map(onu => [onu['ONU ID'], onu])).values());
+    setAllOnus(uniqueOnus);
   };
 
   const renderActiveView = () => {
@@ -78,10 +78,8 @@ export default function Home() {
           <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
             <div className="flex items-center gap-3">
                <SidebarTrigger>
-                <Button variant="ghost" size="icon" className="md:hidden">
                   <Icons.logo className="h-7 w-7 text-primary" />
-                </Button>
-              </SidebarTrigger>
+               </SidebarTrigger>
               <h1 className="font-headline text-xl font-bold tracking-tight text-foreground">
                 ONUs & SBTs
               </h1>
