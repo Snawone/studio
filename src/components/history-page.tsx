@@ -1,44 +1,41 @@
 
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { History, PackagePlus, FileDown, Trash2, Repeat, Server, Tag } from "lucide-react";
+import { History, PackagePlus, FileDown, Trash2, Repeat, Server, Tag, Search, Package } from "lucide-react";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 type HistoryPageProps = {
   allOnus: OnuData[];
 };
 
-type FormattedHistoryEntry = {
-  onu: OnuData;
-  entry: OnuHistoryEntry;
-};
+export function HistoryPage({ allOnus }: HistoryPageProps) {
+  const [searchTerm, setSearchTerm] = useState('');
 
-export function HistoryPage() {
-  const allHistoryEvents = useMemo(() => {
-    let events: FormattedHistoryEntry[] = [];
-    // This component is not receiving the data, so it will be empty.
-    // This is a placeholder for when the data is passed in.
-    const allOnus: OnuData[] = []; 
-    
-    allOnus.forEach(onu => {
-      if (onu.history) {
-        onu.history.forEach(entry => {
-          events.push({ onu, entry });
-        });
-      }
-    });
-
-    return events.sort((a, b) => new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime());
-  }, []);
+  const filteredOnus = useMemo(() => {
+    if (!searchTerm) {
+      // Ordenar por la fecha del evento más reciente en el historial
+      return [...allOnus].sort((a, b) => {
+        const lastEventA = a.history?.[a.history.length - 1]?.date;
+        const lastEventB = b.history?.[b.history.length - 1]?.date;
+        if (!lastEventA || !lastEventB) return 0;
+        return new Date(lastEventB).getTime() - new Date(lastEventA).getTime();
+      });
+    }
+    return allOnus.filter(onu =>
+      onu['ONU ID'].toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [allOnus, searchTerm]);
 
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es });
+      return format(new Date(dateString), "d 'de' MMMM, yyyy, HH:mm", { locale: es });
     } catch (e) {
       return 'Fecha inválida';
     }
@@ -54,60 +51,106 @@ export function HistoryPage() {
     }
   };
 
-  const getHistoryMessage = (entry: OnuHistoryEntry) => {
+  const getHistoryMessage = (entry: OnuHistoryEntry, onu: OnuData) => {
     switch (entry.action) {
-      case 'created': return `ONU creada manualmente`;
-      case 'added': return `ONU agregada desde archivo`;
-      case 'removed': return `ONU retirada del inventario`;
-      case 'restored': return `ONU devuelta al inventario`;
+      case 'created': return `ONU creada manualmente en estante ${onu.Shelf}.`;
+      case 'added': return `ONU agregada desde archivo en estante ${onu.Shelf}.`;
+      case 'removed': return `ONU retirada del inventario.`;
+      case 'restored': return `ONU devuelta al estante ${onu.Shelf}.`;
       default: return `Acción desconocida`;
     }
   };
 
   return (
-    <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
+    <section className="w-full max-w-6xl mx-auto flex flex-col gap-8">
       <div className="space-y-2">
         <h2 className="text-2xl font-headline font-semibold flex items-center gap-2">
           <History className="h-6 w-6" />
-          Historial de Operaciones
+          Historial de Dispositivos
         </h2>
         <p className="text-muted-foreground text-sm">
-          Registro cronológico de todas las actividades en el inventario.
+          Busca y visualiza el ciclo de vida completo de cada ONU en el inventario.
         </p>
       </div>
+
       <Card>
-        <CardContent className="pt-6">
-          {allHistoryEvents.length > 0 ? (
-            <ul className="space-y-6">
-              {allHistoryEvents.map(({ onu, entry }, index) => (
-                <li key={index} className="flex items-start gap-4">
-                  <div className="mt-1">{getHistoryIcon(entry.action)}</div>
-                  <div className="flex-1">
-                    <p className="font-medium">{getHistoryMessage(entry)}</p>
-                    <div className="text-sm text-muted-foreground space-y-1 mt-1">
-                      <p className="flex items-center gap-2 font-mono text-xs">
-                        <Tag className="h-3 w-3" />
-                        {onu['ONU ID']}
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <Server className="h-3 w-3" />
-                        Estante: <strong>{onu.Shelf}</strong>
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground whitespace-nowrap mt-1">{formatDate(entry.date)}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-              <p className="text-muted-foreground">
-                No hay operaciones registradas todavía.
-              </p>
+        <CardHeader>
+          <CardTitle>Buscar ONU por ID</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-xl">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="search-term"
+                type="text"
+                placeholder={`Buscar entre ${allOnus.length} ONUs...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 w-full"
+              />
             </div>
-          )}
+          </div>
         </CardContent>
       </Card>
+      
+      <div className="space-y-6">
+        {filteredOnus.length > 0 ? (
+          filteredOnus.map((onu) => (
+            <Card key={onu['ONU ID']} className="overflow-hidden">
+              <CardHeader className="flex flex-row justify-between items-start bg-muted/30">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base font-mono">
+                    <Tag className="h-4 w-4" />
+                    {onu['ONU ID']}
+                  </CardTitle>
+                  <CardDescription className="flex items-center gap-4 mt-2">
+                     <span className="flex items-center gap-2">
+                        <Server className="h-4 w-4" />
+                        <span className="font-medium">{onu.Shelf}</span>
+                     </span>
+                     {onu.removedDate ? (
+                        <Badge variant="destructive">Retirada</Badge>
+                     ) : (
+                        <Badge variant="secondary" className="bg-green-100 text-green-800">Activa</Badge>
+                     )}
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                 <h4 className="font-semibold mb-4 flex items-center gap-2 text-sm"><History className="h-4 w-4" />Línea de tiempo</h4>
+                {onu.history && onu.history.length > 0 ? (
+                  <ul className="space-y-4 border-l-2 pl-6 ml-2">
+                    {[...onu.history].reverse().map((entry, index) => (
+                      <li key={index} className="relative">
+                         <div className="absolute -left-[30px] top-1/2 -translate-y-1/2 bg-background p-1 rounded-full">
+                           {getHistoryIcon(entry.action)}
+                         </div>
+                        <p className="font-medium text-sm">{getHistoryMessage(entry, onu)}</p>
+                        <p className="text-xs text-muted-foreground">{formatDate(entry.date)}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No hay historial para esta ONU.</p>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="text-center py-16 border-2 border-dashed rounded-lg">
+            <Package className="h-12 w-12 mx-auto text-muted-foreground" />
+            <h3 className="mt-4 text-lg font-medium">
+              {searchTerm ? 'No se encontraron ONUs' : 'No hay dispositivos'}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {searchTerm
+                ? `No se encontraron resultados para "${searchTerm}".`
+                : 'Cuando cargues un archivo, el historial aparecerá aquí.'}
+            </p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
