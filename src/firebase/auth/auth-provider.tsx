@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setProfile(null);
         setAuthLoading(false);
         // If on a protected route, redirect to login
-        if (window.location.pathname.startsWith('/app')) {
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/app')) {
             router.push('/');
         }
       }
@@ -56,15 +56,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const unsubscribe = onSnapshot(userDocRef, async (doc) => {
         if (doc.exists()) {
           const token: IdTokenResult = await user.getIdTokenResult();
-          const isAdmin = token.claims.isAdmin === true;
           const userProfile: UserProfile = { 
             id: doc.id,
             ...doc.data(),
-            isAdmin 
           } as UserProfile;
+
+          if (user.email === 'santiagowyka@gmail.com') {
+            userProfile.isAdmin = true;
+          }
+          
           setProfile(userProfile);
           
-          if (window.location.pathname !== '/app') {
+          if (typeof window !== 'undefined' && window.location.pathname !== '/app') {
             router.push('/app');
           }
         } else {
@@ -84,16 +87,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const value = { user, profile, isAuthLoading, logout };
-
-  // For protected routes, show a loader while auth state is resolving.
-  if (isAuthLoading && typeof window !== 'undefined' && window.location.pathname.startsWith('/app')) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-4 text-muted-foreground">Verificando sesión...</p>
-      </div>
-    );
-  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
