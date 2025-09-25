@@ -84,7 +84,6 @@ export function OnuFinder({
   const storage = getStorage();
   
   const [onusFromSheet, setOnusFromSheet] = useState<OnuFromSheet[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -104,11 +103,10 @@ export function OnuFinder({
   useEffect(() => {
       const fetchAndProcessFile = async () => {
         if (!fileInfo || !fileInfo.fileUrl) {
-          setIsLoading(false);
+          setOnusFromSheet([]);
           return;
         }
 
-        setIsLoading(true);
         setError(null);
         try {
           const storageRef = ref(storage, fileInfo.fileUrl);
@@ -121,7 +119,7 @@ export function OnuFinder({
 
           if (jsonData.length < 2) {
             setError('La hoja de cálculo está vacía o tiene un formato incorrecto.');
-            setIsLoading(false);
+            setOnusFromSheet([]);
             return;
           }
 
@@ -150,9 +148,8 @@ export function OnuFinder({
         } catch (err: any) {
           console.error("Error fetching or processing file:", err);
           setError(err.message || 'No se pudo obtener o procesar el archivo desde la URL.');
-        } finally {
-          setIsLoading(false);
-        }
+          setOnusFromSheet([]);
+        } 
       };
       
       fetchAndProcessFile();
@@ -160,12 +157,8 @@ export function OnuFinder({
 
 
   useEffect(() => {
-    if (onusFromSheet.length === 0) {
-      if (activeView === 'retiradas') {
-         setMergedOnus(onusFromFirestore);
-      } else {
-         setMergedOnus([]);
-      }
+    if (!onusFromSheet.length) {
+      setMergedOnus(onusFromFirestore.filter(onu => onu.status === activeView.slice(0, -1)));
       return;
     }
 
@@ -192,39 +185,29 @@ export function OnuFinder({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    setIsLoading(true);
     setError(null);
 
     try {
-      // 1. Upload to Firebase Storage
       const filePath = `inventory/onus.xlsx`;
       const storageRef = ref(storage, filePath);
-      const uploadResult = await uploadBytes(storageRef, file);
+      await uploadBytes(storageRef, file);
       
-      // We don't need the downloadURL, just the path.
-      // const downloadURL = await getDownloadURL(uploadResult.ref);
-
-      // 2. Read the file locally to get sheet names for metadata
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
 
-      // 3. Save file info to Firestore
       const fileInfoRef = doc(firestore, 'settings', 'fileInfo');
       const newFileInfo: FileInfo = {
           fileName: file.name,
-          fileUrl: filePath, // Store the path, not the full URL
+          fileUrl: filePath,
           sheetName: sheetName,
           lastUpdated: new Date().toISOString(),
       };
       await setDoc(fileInfoRef, newFileInfo);
       
-      // The useEffect listening to fileInfo will trigger a re-fetch and process automatically
     } catch (err: any) {
       console.error("Error during file upload process:", err);
       setError(err.message || 'Error al subir o procesar el archivo.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -262,8 +245,6 @@ export function OnuFinder({
           return;
       }
       const addedDate = new Date().toISOString();
-      // This only adds to Firestore, it won't appear in the main list until the Excel is updated.
-      // This is the desired behavior now.
       const newOnu: OnuData = {
           id: newOnuId,
           'ONU ID': newOnuId,
@@ -531,7 +512,7 @@ export function OnuFinder({
   
   const showUploadCard = !fileInfo && profile?.isAdmin;
 
-  if (isLoading) {
+  if (isLoadingOnus && !fileInfo) {
     return (
         <section className="w-full max-w-7xl mx-auto flex flex-col gap-8 justify-center items-center min-h-[calc(100vh-200px)]">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -733,7 +714,3 @@ export function OnuFinder({
     </section>
   );
 }
-
-    
-
-    
