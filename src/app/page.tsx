@@ -9,7 +9,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <Icons.logo className="h-7 w-7 text-primary" />
             <h1 className="font-headline text-xl font-bold tracking-tight text-foreground">
-              OnuShelf Finder
+              ONUs & SBTs
             </h1>
           </div>
         </div>

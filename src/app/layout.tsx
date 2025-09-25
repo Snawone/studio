@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'OnuShelf Finder',
+  title: 'ONUs & SBTs',
   description: 'Encuentra la ubicación de tus ONUs fácilmente.',
 };
 
