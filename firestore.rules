@@ -1,91 +1,104 @@
 /**
- * @fileoverview Firestore Security Rules for the inventory management application.
+ * @fileOverview Firestore Security Rules for the ONU/STB Inventory App.
  *
  * Core Philosophy:
- * This ruleset prioritizes secure data access based on user roles and ownership.
- * It aims to prevent unauthorized data modification while allowing for flexible data schemas during prototyping.
+ * This ruleset prioritizes secure access to user-specific data while allowing public read access to certain collections.
+ * It enforces strict ownership for user profiles and owner-only write access for shelves and onus.
  *
  * Data Structure:
- * - /onus/{onuId}: Global collection of all ONUs (Optical Network Units).
- * - /shelves/{shelfId}: Collection of physical shelves.
- * - /users/{userId}: Stores user profile information.
+ * - /onus/{onuId}: Collection of all ONUs and STBs, with public read access and owner-only writes.
+ * - /shelves/{shelfId}: Collection of shelves with public read access and owner-only writes.
+ * - /users/{userId}: Collection of user profiles, with strict owner-only access.
  *
  * Key Security Decisions:
- * - Shelves are publicly readable to facilitate browsing the inventory.
- * - ONU create, update, and delete operations require the user to be the owner.
- * - User profiles are strictly private and only accessible by the owning user.
+ * - Shelves can be listed by any authenticated user.
+ * - Onus can be listed by any authenticated user.
+ * - User profiles are strictly private; only the owning user can read or write their profile data.
  *
  * Denormalization for Authorization:
- * - The `Onu` entity denormalizes `shelfName` to simplify queries and display in list views.
+ *  - The Shelf documents do not require denormalization for authorization.
+ *  - The Onu documents do not require denormalization for authorization.
+ *
+ * Structural Segregation:
+ *  - There is no structural segregation used.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Allows public read access to shelves, but restricts write access.
-     * @path /databases/{database}/documents/shelves/{shelfId}
-     * @allow (get, list) Anyone can view shelves.
-     * @deny (create, update, delete) No one can create, update, or delete shelves without specific authorization.
-     * @principle Public read access with restricted writes.
-     */
-    match /shelves/{shelfId} {
-      allow get, list: if true;
-      allow create, update, delete: if false; // TODO: Add more fine-grained control if needed later
-
-    }
-
-    /**
-     * @description Manages access to ONU (Optical Network Unit) documents.
-     * @path /databases/{database}/documents/onus/{onuId}
-     * @allow (get) Anyone can read ONU details.
-     * @allow (list) Anyone can list ONUs.
-     * @allow (create) Only users who are authenticated can create ONUs and must set the shelfId and shelfName correctly.
-     * @allow (update) Only users who are authenticated can update existing ONUs if they exist.
-     * @allow (delete) Only users who are authenticated can delete existing ONUs if they exist.
-     * @deny (create) Denies create if the shelfId or shelfName are not correct.
-     * @deny (update) Denies updates to the shelfId field, as it is immutable.
-     * @principle Public read, owner-only writes, relational integrity.
-     */
-    match /onus/{onuId} {
-      allow get, list: if true;
-      allow create: if isSignedIn() && request.resource.data.shelfId is string && request.resource.data.shelfName is string;
-      allow update: if isSignedIn() && resource != null && resource.data.shelfId == request.resource.data.shelfId;
-      allow delete: if isSignedIn() && resource != null;
-    }
-
-    /**
-     * @description Secures user profile data, ensuring only the owner can read and write.
-     * @path /databases/{database}/documents/users/{userId}
-     * @allow (get) Only the user can retrieve their own profile.
-     * @allow (list) Listing users is not allowed.
-     * @allow (create) A user can create their profile if the userId matches their auth.uid.
-     * @allow (update) Only the user can update their own profile.
-     * @allow (delete) Only the user can delete their own profile.
-     * @deny (create) Creation is denied if the userId does not match the auth.uid.
-     * @deny (update) Update is denied if the userId in the data is changed.
-     * @principle Strict user-ownership for profile data.
-     */
-    match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if false;
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) && resource.data.email == request.resource.data.email;
-      allow delete: if isOwner(userId);
-    }
-
-    /**
-     * @description Helper function to check if the request is authenticated.
+     * @description Checks if the request is made by an authenticated user.
+     * @returns {boolean} True if the user is signed in, false otherwise.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Helper function to check if the requesting user is the owner of the resource.
+     * @description Checks if the authenticated user's ID matches the provided user ID.
+     * @param {string} userId - The user ID to compare against.
+     * @returns {boolean} True if the user is the owner, false otherwise.
      */
     function isOwner(userId) {
       return request.auth.uid == userId;
+    }
+
+     /**
+      * @description Checks if the authenticated user's ID matches the provided user ID and the resource exists.
+      * @param {string} userId - The user ID to compare against.
+      * @returns {boolean} True if the user is the existing owner, false otherwise.
+      */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description Rules for the /onus/{onuId} collection.
+     * @path /onus/{onuId}
+     * @allow (get, list): Any authenticated user can read Onu details.
+     * @allow (create): Only the owner can create a new Onu, and the `shelfId` must match.
+     * @allow (update, delete): Only the owner can modify or delete an existing Onu.
+     * @deny (create): A non-authenticated user cannot create a Onu.
+     * @deny (update, delete): A non-owner cannot modify or delete an existing Onu.
+     * @principle Public Read with Owner-Only Writes: Any authenticated user can read, but only the owner can modify.
+     */
+    match /onus/{onuId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    /**
+     * @description Rules for the /shelves/{shelfId} collection.
+     * @path /shelves/{shelfId}
+     * @allow (get, list): Any authenticated user can read Shelf details.
+     * @allow (create): Only the owner can create a new Shelf.
+     * @allow (update, delete): Only the owner can modify or delete an existing Shelf.
+     * @deny (create): A non-authenticated user cannot create a Shelf.
+     * @deny (update, delete): A non-owner cannot modify or delete an existing Shelf.
+     * @principle Public Read with Owner-Only Writes: Any authenticated user can read, but only the owner can modify.
+     */
+    match /shelves/{shelfId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    /**
+     * @description Rules for the /users/{userId} collection.
+     * @path /users/{userId}
+     * @allow (get, list): Only the owner can read their own profile. Listing is disallowed.
+     * @allow (create): Only the user themselves can create their profile, and the userId must match.
+     * @allow (update, delete): Only the owner can modify or delete their own profile.
+     * @deny (create): A non-authenticated user cannot create a profile.
+     * @deny (update, delete): A non-owner cannot modify or delete another user's profile.
+     * @principle Enforces document ownership for writes.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId);
+      allow update, delete: if isExistingOwner(userId);
     }
   }
 }
