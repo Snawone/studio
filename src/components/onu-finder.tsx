@@ -50,13 +50,12 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from "@/firebase";
-import { writeBatch, doc, collection } from "firebase/firestore";
+import { writeBatch, doc } from "firebase/firestore";
 import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
     onus: OnuData[];
-    searchList: OnuData[];
     allShelves: string[];
     userId: string;
 }
@@ -64,7 +63,6 @@ type OnuFinderProps = {
 export function OnuFinder({ 
   activeView, 
   onus,
-  searchList,
   allShelves,
   userId
 }: OnuFinderProps) {
@@ -94,12 +92,17 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   useEffect(() => {
-    const loaded = localStorage.getItem(`onusLoaded_${userId}`);
-    if (loaded) {
-        setIsDataLoaded(true);
+    // This effect now only checks if there is any data to determine the upload screen.
+    // If onus has items, it means data is loaded from Firestore.
+    if (onus && onus.length > 0) {
+      setIsDataLoaded(true);
     }
+    // Also, if a file has been processed, we consider data loaded.
+    const localFlag = localStorage.getItem(`onusLoaded_${userId}`);
+    if(localFlag) setIsDataLoaded(true);
+
     setIsHydrating(false);
-  }, [userId]);
+  }, [onus, userId]);
 
 
   const parseAndUploadSheetData = async (wb: XLSX.WorkBook, sheetName: string) => {
@@ -287,6 +290,7 @@ export function OnuFinder({
 
   const filteredResults = useMemo(() => {
     if (!searchTerm) return onus;
+    if (!onus) return [];
     return onus.filter((row) => 
         row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -621,7 +625,7 @@ export function OnuFinder({
                     <div className="flex items-center gap-2">
                          
                         <h2 className="text-2xl font-headline font-semibold">
-                            {activeView === 'activas' ? `Inventario de ONUs Activas (${onus.length})` : `ONUs Retiradas (${onus.length})`}
+                            {activeView === 'activas' ? `Inventario de ONUs Activas (${onus?.length || 0})` : `ONUs Retiradas (${onus?.length || 0})`}
                         </h2>
                     </div>
                     <p className="text-muted-foreground text-sm mt-1">
@@ -712,7 +716,7 @@ export function OnuFinder({
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${onus.length} ONUs...`}
+                    placeholder={`Buscar entre ${onus?.length || 0} ONUs...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {

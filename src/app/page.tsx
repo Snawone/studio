@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { collection, query, where } from 'firebase/firestore';
+import { collection } from 'firebase/firestore';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
@@ -45,10 +45,11 @@ export default function Home() {
     return { activeOnus: active, removedOnus: removed, searchList: search, allShelves: shelves };
   }, [allOnus]);
 
-  if (isUserLoading || isOnusLoading) {
+  if (isUserLoading || (user && isOnusLoading)) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-4 text-muted-foreground">Cargando datos...</p>
       </div>
     );
   }
@@ -60,7 +61,6 @@ export default function Home() {
         return <OnuFinder 
                   activeView="activas" 
                   onus={activeOnus} 
-                  searchList={searchList}
                   allShelves={allShelves}
                   userId={user!.uid}
                 />;
@@ -68,7 +68,6 @@ export default function Home() {
         return <OnuFinder 
                   activeView="retiradas" 
                   onus={removedOnus} 
-                  searchList={searchList}
                   allShelves={allShelves}
                   userId={user!.uid}
                 />;
@@ -85,7 +84,6 @@ export default function Home() {
         return <OnuFinder 
                   activeView="activas" 
                   onus={activeOnus} 
-                  searchList={searchList} 
                   allShelves={allShelves}
                   userId={user!.uid}
                 />;
