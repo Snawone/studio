@@ -37,6 +37,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -241,6 +248,11 @@ export function OnuFinder() {
     });
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB));
   }, [filteredResults]);
+
+  const allShelves = useMemo(() => {
+    const uniqueShelves = new Set(data.map(onu => onu.Shelf));
+    return Array.from(uniqueShelves).sort();
+  }, [data]);
 
 
   const resetState = () => {
@@ -473,7 +485,16 @@ export function OnuFinder() {
                                 </div>
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label htmlFor="new-onu-shelf" className="text-right">Estante</Label>
-                                    <Input id="new-onu-shelf" value={newOnuShelf} onChange={(e) => setNewOnuShelf(e.target.value)} className="col-span-3" placeholder="Ej: Box1" />
+                                    <Select value={newOnuShelf} onValueChange={setNewOnuShelf}>
+                                      <SelectTrigger className="col-span-3">
+                                        <SelectValue placeholder="Selecciona un estante" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {allShelves.map(shelf => (
+                                          <SelectItem key={shelf} value={shelf}>{shelf}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                 </div>
                             </div>
                             <DialogFooter>
@@ -590,3 +611,5 @@ export function OnuFinder() {
     </section>
   );
 }
+
+    
