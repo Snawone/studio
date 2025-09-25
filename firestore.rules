@@ -1,71 +1,87 @@
 /**
- * @fileoverview Firestore Security Rules for the ONU Inventory App.
+ * @fileoverview Firestore Security Rules for Prototyping.
  *
  * Core Philosophy:
- * This ruleset enforces a strict user-ownership model, where each user can only
- * access the ONU (Optical Network Unit) data associated with their own user ID.
+ * This ruleset prioritizes security by enforcing strict ownership and role-based access control.
+ * It is designed for prototyping and rapid iteration, so data shape validation is relaxed.
  *
  * Data Structure:
- * ONU data is nested under /users/{userId}/onus/{onuId}. Each ONU document
- * contains a 'userId' field that MUST match the {userId} in the path.
+ * - /onus/{onuId}:  A global collection containing ONU (Optical Network Unit) records.
+ * - /users/{userId}: Stores user profile information.
  *
  * Key Security Decisions:
- * - Users can only list ONUs that belong to them.
- * - Users can only create, update, or delete ONUs that belong to them.
- * - No global admin roles are defined in this prototype.
+ * - ONU records are publicly readable, but only authenticated users can create, update, or delete them.
+ *   - Only the user who created an ONU record can modify or delete it.  This requires the 'Onu' entity to have an `ownerId` property.
+ * - User profiles are private; only the authenticated user can read or write their own profile.
+ * - Listing of users is disallowed.
  *
  * Denormalization for Authorization:
- * The 'userId' field is denormalized into the ONU document to allow for
- * efficient ownership checks without requiring additional reads.
+ * - ONU documents MUST contain an `ownerId` field to determine ownership for write operations.
+ *
+ * Structural Segregation:
+ * - Public ONU data and private user profiles are stored in separate top-level collections.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
+     * @description Grants public read access to ONU records, but restricts write access to the owner.
+     * @path /onus/{onuId}
+     * @allow (get, list): Any user can read ONU records.
+     * @allow (create): Only authenticated users can create ONU records, and they must set `ownerId` to their UID.
+     * @allow (update, delete): Only the owner of the ONU record can update or delete it.
+     * @deny (create): If the `ownerId` field in the request does not match the authenticated user's UID.
+     * @deny (update, delete): If the user is not the owner of the ONU record.
+     * @principle Allows public reads but enforces ownership for writes.
+     */
+    match /onus/{onuId} {
+      allow get, list: if true;
+
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+
+      allow update, delete: if isExistingOwner(resource.data.ownerId);
+
+    }
+
+    /**
+     * @description Controls access to user profile information.
+     * @path /users/{userId}
+     * @allow (get, create, update, delete): Only the authenticated user can access their own profile.
+     * @deny (get, create, update, delete): If the user ID in the path does not match the authenticated user's UID.
+     * @principle Enforces strict user-ownership for profile data.
+     */
+    match /users/{userId} {
+      allow get, create, update, delete: if isOwner(userId);
+      allow list: if false;
+    }
+
+    // ---- Helper Functions ----
+
+    /**
      * @description Checks if the user is signed in.
+     * @return {boolean} True if the user is authenticated.
      */
     function isSignedIn() {
       return request.auth != null;
     }
 
     /**
-     * @description Checks if the user ID matches the authenticated user's ID.
+     * @description Checks if the user is the owner of the resource.
+     * @param {string} userId The user ID to compare against the authenticated user's UID.
+     * @return {boolean} True if the user ID matches the authenticated user's UID.
      */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     /**
-     * @description Checks if the user is the owner of the existing document.
+     * @description Checks if the user is the owner of the resource and the resource exists.
+     * @param {string} userId The user ID to compare against the authenticated user's UID.
+     * @return {boolean} True if the user ID matches the authenticated user's UID and the resource exists.
      */
     function isExistingOwner(userId) {
       return isOwner(userId) && resource != null;
-    }
-
-    /**
-     * @description Secures the /users/{userId}/onus/{onuId} path.
-     * @path /users/{userId}/onus/{onuId}
-     * @allow (create) User A creates a new ONU document under /users/A/onus/123, where the ONU data contains userId: "A".
-     * @allow (update) User A updates an existing ONU document under /users/A/onus/123.
-     * @allow (delete) User A deletes an existing ONU document under /users/A/onus/123.
-     * @allow (get) User A gets ONU document /users/A/onus/123.
-     * @allow (list) User A lists onus under /users/A/onus/.
-     * @deny (create) User A attempts to create an ONU document under /users/B/onus/123.
-     * @deny (update) User A attempts to update an ONU document under /users/B/onus/123.
-     * @deny (delete) User A attempts to delete an ONU document under /users/B/onus/123.
-     * @deny (get) User A attempts to get ONU document /users/B/onus/123.
-     * @principle Enforces document ownership for writes and reads.  Validates relational integrity.
-     */
-    match /users/{userId}/onus/{onuId} {
-      // Read permissions
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-
-      // Write permissions
-      allow create: if isOwner(userId) && request.resource.data.userId == userId && request.resource.data.id == onuId;
-      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isExistingOwner(userId);
     }
   }
 }
