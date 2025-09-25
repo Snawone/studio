@@ -48,8 +48,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from "@/firebase";
-import { doc } from "firebase/firestore";
-import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { doc, writeBatch, increment } from "firebase/firestore";
+import { updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { useAuthContext } from "@/firebase/auth/auth-provider";
 
 type OnuFinderProps = {
@@ -81,18 +81,28 @@ export function OnuFinder({
   const handleConfirmRetire = () => {
     if (onuToManage && profile) {
         const removedDate = new Date().toISOString();
-        const docRef = doc(firestore, 'onus', onuToManage.id);
+        
+        const onuRef = doc(firestore, 'onus', onuToManage.id);
+        const shelfRef = doc(firestore, 'shelves', onuToManage.shelfId);
+
+        const batch = writeBatch(firestore);
+
         const historyEntry: OnuHistoryEntry = { 
           action: 'removed', 
           date: removedDate,
           userId: profile.id,
           userName: profile.name,
         };
-        setDocumentNonBlocking(docRef, {
+
+        batch.update(onuRef, {
           status: 'removed',
           removedDate: removedDate,
           history: [...(onuToManage.history || []), historyEntry]
-        }, { merge: true });
+        });
+
+        batch.update(shelfRef, { itemCount: increment(-1) });
+        
+        batch.commit();
     }
     setIsConfirmRetireOpen(false);
     setOnuToManage(null);
@@ -101,18 +111,27 @@ export function OnuFinder({
   const handleConfirmRestore = () => {
     if (onuToManage && profile) {
       const restoredDate = new Date().toISOString();
-      const docRef = doc(firestore, 'onus', onuToManage.id);
+      const onuRef = doc(firestore, 'onus', onuToManage.id);
+      const shelfRef = doc(firestore, 'shelves', onuToManage.shelfId);
+
+      const batch = writeBatch(firestore);
+
       const historyEntry: OnuHistoryEntry = {
         action: 'restored',
         date: restoredDate,
         userId: profile.id,
         userName: profile.name,
       };
-      updateDocumentNonBlocking(docRef, {
+      
+      batch.update(onuRef, {
         status: 'active',
         removedDate: null,
         history: [...(onuToManage.history || []), historyEntry]
       });
+
+      batch.update(shelfRef, { itemCount: increment(1) });
+      
+      batch.commit();
     }
     setIsConfirmRestoreOpen(false);
     setOnuToManage(null);
@@ -476,7 +495,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción marcará el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirado.
+              Esta acción marcará el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirado. Esto disminuirá el contador de items en el estante <strong>{onuToManage?.shelfName}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -493,7 +512,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Confirmar devolución?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción devolverá el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activos.
+              Esta acción devolverá el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activos y aumentará el contador de items en el estante <strong>{onuToManage?.shelfName}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -507,3 +526,5 @@ export function OnuFinder({
     </section>
   );
 }
+
+    

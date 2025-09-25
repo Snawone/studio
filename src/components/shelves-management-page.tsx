@@ -37,7 +37,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 
 
 const shelfSchema = z.object({
@@ -105,26 +105,28 @@ function ShelfForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Contenido</FormLabel>
-                   <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className={!canChangeType ? 'cursor-not-allowed' : ''}>
-                          <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canChangeType}>
-                            <FormControl>
-                              <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="onu">ONUs</SelectItem>
-                              <SelectItem value="stb">STBs</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </TooltipTrigger>
-                      {!canChangeType && (
-                        <TooltipContent>
-                          <p>No se puede cambiar el tipo de un estante con items.</p>
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
+                   <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className={!canChangeType ? 'cursor-not-allowed' : ''}>
+                            <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canChangeType}>
+                              <FormControl>
+                                <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="onu">ONUs</SelectItem>
+                                <SelectItem value="stb">STBs</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </TooltipTrigger>
+                        {!canChangeType && (
+                          <TooltipContent>
+                            <p>No se puede cambiar el tipo de un estante con items.</p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                   </TooltipProvider>
                   <FormMessage />
                 </FormItem>
               )}
@@ -150,6 +152,8 @@ export function ShelvesManagementPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingShelf, setEditingShelf] = useState<Shelf | null>(null);
+  const [shelfToDelete, setShelfToDelete] = useState<Shelf | null>(null);
+
 
   const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
   const { data: shelves, isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
@@ -185,21 +189,26 @@ export function ShelvesManagementPage() {
     setEditingShelf(null);
   };
 
-  const handleDeleteShelf = (shelf: Shelf) => {
-    if (shelf.itemCount > 0) {
+  const handleDeleteShelf = () => {
+    if (!shelfToDelete) return;
+    
+    if (shelfToDelete.itemCount > 0) {
       toast({
         variant: "destructive",
         title: "Acción no permitida",
         description: "No se puede eliminar un estante que contiene dispositivos.",
       });
+      setShelfToDelete(null);
       return;
     }
-    const shelfRef = doc(firestore, 'shelves', shelf.id);
+    
+    const shelfRef = doc(firestore, 'shelves', shelfToDelete.id);
     deleteDocumentNonBlocking(shelfRef);
     toast({
       title: "Estante eliminado",
-      description: `El estante "${shelf.name}" ha sido eliminado.`,
+      description: `El estante "${shelfToDelete.name}" ha sido eliminado.`,
     });
+    setShelfToDelete(null);
   };
   
   return (
@@ -241,6 +250,7 @@ export function ShelvesManagementPage() {
               </Dialog>
           </CardHeader>
           <CardContent>
+          <TooltipProvider>
           {isLoadingShelves ? (
                     <div className="flex items-center justify-center py-8">
                         <Loader2 className="animate-spin text-muted-foreground"/>
@@ -260,13 +270,12 @@ export function ShelvesManagementPage() {
                                         <Edit className="h-4 w-4"/>
                                         <span className="sr-only">Editar estante {shelf.name}</span>
                                     </Button>
-
                                     <AlertDialog>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
                                           <div className={shelf.itemCount > 0 ? 'cursor-not-allowed' : ''}>
                                             <AlertDialogTrigger asChild>
-                                                <Button variant="ghost" size="icon" disabled={shelf.itemCount > 0}>
+                                                <Button variant="ghost" size="icon" disabled={shelf.itemCount > 0} onClick={() => setShelfToDelete(shelf)}>
                                                     <Trash2 className="h-4 w-4 text-destructive/80"/>
                                                     <span className="sr-only">Eliminar estante {shelf.name}</span>
                                                 </Button>
@@ -283,14 +292,14 @@ export function ShelvesManagementPage() {
                                           <AlertDialogHeader>
                                               <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
                                               <AlertDialogDescription>
-                                                  Esta acción es permanente y no se puede deshacer. Se eliminará el estante <strong>{shelf.name}</strong>.
+                                                  Esta acción es permanente y no se puede deshacer. Se eliminará el estante <strong>{shelfToDelete?.name}</strong>.
                                               </AlertDialogDescription>
                                           </AlertDialogHeader>
                                           <AlertDialogFooter>
-                                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                              <AlertDialogCancel onClick={() => setShelfToDelete(null)}>Cancelar</AlertDialogCancel>
                                               <AlertDialogAction 
                                                 className="bg-destructive hover:bg-destructive/90"
-                                                onClick={() => handleDeleteShelf(shelf)}>
+                                                onClick={handleDeleteShelf}>
                                                   Sí, eliminar
                                               </AlertDialogAction>
                                           </AlertDialogFooter>
@@ -305,6 +314,7 @@ export function ShelvesManagementPage() {
                         No hay estantes creados. Haz clic en "Crear Estante" para empezar.
                     </p>
                 )}
+            </TooltipProvider>
           </CardContent>
       </Card>
 
@@ -331,3 +341,5 @@ export function ShelvesManagementPage() {
     </section>
   );
 }
+
+    

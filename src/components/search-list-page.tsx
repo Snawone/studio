@@ -20,7 +20,7 @@ import {
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from '@/firebase';
-import { writeBatch, doc } from 'firebase/firestore';
+import { writeBatch, doc, increment } from 'firebase/firestore';
 import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
 
@@ -47,6 +47,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
     
     const userDocRef = doc(firestore, 'users', userId);
     const onuDocRef = doc(firestore, 'onus', onuToRetire.id);
+    const shelfDocRef = doc(firestore, 'shelves', onuToRetire.shelfId);
     const removedDate = new Date().toISOString();
     
     const batch = writeBatch(firestore);
@@ -64,6 +65,10 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
       removedDate: removedDate,
       history: [...(onuToRetire.history || []), historyEntry]
     });
+
+    // Decrement shelf item count
+    batch.update(shelfDocRef, { itemCount: increment(-1) });
+
 
     // Remove from search list
     const newSearchList = searchListIds.filter(id => id !== onuToRetire.id);
@@ -89,11 +94,15 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
     searchListOnus.forEach(onuInSearch => {
       if (onuInSearch.status === 'active') {
         const onuDocRef = doc(firestore, 'onus', onuInSearch.id);
+        const shelfDocRef = doc(firestore, 'shelves', onuInSearch.shelfId);
+        
         batch.update(onuDocRef, {
           status: 'removed',
           removedDate: date,
           history: [...(onuInSearch.history || []), historyEntry]
         });
+
+        batch.update(shelfDocRef, { itemCount: increment(-1) });
       }
     });
     
@@ -245,3 +254,5 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
     </section>
   );
 }
+
+    
