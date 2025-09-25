@@ -50,6 +50,10 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 
 
 export function OnuFinder() {
+  const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
+
   const [data, setData] = useState<OnuData[]>([]);
   const [removedOnus, setRemovedOnus] = useState<OnuData[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -73,58 +77,66 @@ export function OnuFinder() {
 
   useEffect(() => {
     try {
-      const savedData = localStorage.getItem('onuData');
-      const savedRemovedOnus = localStorage.getItem('onuRemovedData');
       const savedFileName = localStorage.getItem('onuFileName');
-      if (savedData && savedFileName) {
-        setData(JSON.parse(savedData));
-        setRemovedOnus(savedRemovedOnus ? JSON.parse(savedRemovedOnus) : []);
-        setFileName(savedFileName);
-        setIsDataLoaded(true);
+      if (savedFileName) {
+        setIsLoading(true);
+        const savedFileContent = localStorage.getItem('onuFileContent');
+        if (savedFileContent) {
+          const workbook = XLSX.read(savedFileContent, { type: 'binary' });
+          setWorkbook(workbook);
+          const sheets = workbook.SheetNames;
+          setSheetNames(sheets);
+          setFileName(savedFileName);
+          
+          const savedSheet = localStorage.getItem('onuSelectedSheet');
+          const sheetToLoad = savedSheet && sheets.includes(savedSheet) ? savedSheet : sheets[0];
+          setSelectedSheet(sheetToLoad);
+          
+          const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${sheetToLoad}`);
+          setRemovedOnus(savedRemovedOnus ? JSON.parse(savedRemovedOnus) : []);
+
+          setIsDataLoaded(true);
+        }
+        setIsLoading(false);
       }
     } catch (e) {
       console.error("Failed to load data from localStorage", e);
-      localStorage.clear();
+      resetState();
     } finally {
       setIsHydrating(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!isHydrating) {
-        try {
-            if (isDataLoaded) {
-                localStorage.setItem('onuData', JSON.stringify(data));
-                localStorage.setItem('onuRemovedData', JSON.stringify(removedOnus));
-                if (fileName) {
-                    localStorage.setItem('onuFileName', fileName);
-                }
-            } else {
-                localStorage.removeItem('onuData');
-                localStorage.removeItem('onuRemovedData');
-                localStorage.removeItem('onuFileName');
-            }
-        } catch (e) {
-            console.error("Failed to save data to localStorage", e);
-        }
+    if (workbook && selectedSheet) {
+      parseSheetData(workbook, selectedSheet);
+      if (!isHydrating) {
+        localStorage.setItem('onuSelectedSheet', selectedSheet);
+        const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
+        setRemovedOnus(savedRemovedOnus ? JSON.parse(savedRemovedOnus) : []);
+      }
     }
-  }, [data, removedOnus, fileName, isDataLoaded, isHydrating]);
+  }, [workbook, selectedSheet, isHydrating]);
 
 
-  const handleFileParse = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
+  useEffect(() => {
+    if (!isHydrating && isDataLoaded) {
       try {
-        const fileContent = e.target?.result;
-        if (!fileContent) throw new Error("No se pudo leer el archivo.");
-        const workbook = XLSX.read(fileContent, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        
+        localStorage.setItem(`onuRemovedData_${selectedSheet}`, JSON.stringify(removedOnus));
+      } catch (e) {
+        console.error("Failed to save removed ONUs to localStorage", e);
+      }
+    }
+  }, [removedOnus, selectedSheet, isHydrating, isDataLoaded]);
+
+  const parseSheetData = (wb: XLSX.WorkBook, sheetName: string) => {
+    try {
+        const worksheet = wb.Sheets[sheetName];
         const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
 
         if (sheetData.length < 2) {
-          throw new Error("La hoja de cálculo está vacía o no tiene el formato correcto.");
+            setData([]);
+            return;
         }
         
         const headers = sheetData[0].map(h => String(h || '').trim());
@@ -147,35 +159,68 @@ export function OnuFinder() {
                 }
             }
         }
-
-        if (newOnuData.length === 0) {
-            throw new Error("No se encontraron datos de ONU en el archivo.");
-        }
         
         setData(newOnuData);
-        setRemovedOnus([]);
+    } catch (err: any) {
+        setError(err.message || `Error al procesar la hoja "${sheetName}".`);
+        setData([]);
+    }
+  };
+
+
+  const handleFile = (file: File, fileContent: string | ArrayBuffer) => {
+    try {
+        const wb = XLSX.read(fileContent, { type: 'binary' });
+        setWorkbook(wb);
+        const sheets = wb.SheetNames;
+        setSheetNames(sheets);
         setFileName(file.name);
+        setSelectedSheet(sheets[0]);
+        setRemovedOnus([]);
+        
         setIsDataLoaded(true);
         setError(null);
-      } catch (err: any) {
+        
+        if (typeof fileContent === 'string') {
+            localStorage.setItem('onuFileContent', fileContent);
+        } else {
+            const binaryString = new Uint8Array(fileContent).reduce((data, byte) => data + String.fromCharCode(byte), '');
+            localStorage.setItem('onuFileContent', binaryString);
+        }
+        localStorage.setItem('onuFileName', file.name);
+        localStorage.setItem('onuSelectedSheet', sheets[0]);
+    } catch (err: any) {
         setError(err.message || 'Error al procesar el archivo. Asegúrate que sea un archivo Excel válido con el formato correcto.');
-      } finally {
+    } finally {
         setIsLoading(false);
-      }
+    }
+  };
+
+  const handleFileRead = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const fileContent = e.target?.result;
+        if (!fileContent) {
+            setError("No se pudo leer el archivo.");
+            setIsLoading(false);
+            return;
+        }
+        handleFile(file, fileContent);
     };
     reader.onerror = () => {
         setError('Error al leer el archivo.');
         setIsLoading(false);
-    }
-    reader.readAsArrayBuffer(file);
+    };
+    reader.readAsBinaryString(file);
   };
+
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       setIsLoading(true);
       setError(null);
-      handleFileParse(file);
+      handleFileRead(file);
     }
   };
   
@@ -192,8 +237,8 @@ export function OnuFinder() {
         throw new Error(`Error al obtener el archivo: ${response.statusText}`);
       }
       const blob = await response.blob();
-      const file = new File([blob], url.substring(url.lastIndexOf('/') + 1) || 'archivo_remoto');
-      handleFileParse(file);
+      const file = new File([blob], url.substring(url.lastIndexOf('/') + 1) || 'archivo_remoto.xlsx');
+      handleFileRead(file);
 
     } catch (err: any) {
       setError(err.message || 'No se pudo obtener o procesar el archivo desde la URL.');
@@ -260,6 +305,9 @@ export function OnuFinder() {
 
 
   const resetState = () => {
+    setWorkbook(null);
+    setSheetNames([]);
+    setSelectedSheet('');
     setData([]);
     setRemovedOnus([]);
     setFileName(null);
@@ -270,9 +318,10 @@ export function OnuFinder() {
     if(fileInputRef.current) {
         fileInputRef.current.value = '';
     }
-    localStorage.removeItem('onuData');
-    localStorage.removeItem('onuRemovedData');
+    localStorage.removeItem('onuFileContent');
     localStorage.removeItem('onuFileName');
+    localStorage.removeItem('onuSelectedSheet');
+    sheetNames.forEach(sheet => localStorage.removeItem(`onuRemovedData_${sheet}`));
   };
 
   const renderOnuCard = (row: OnuData, index: number, isRetired = false) => (
@@ -397,7 +446,7 @@ export function OnuFinder() {
           <CardContent className="flex flex-col gap-6">
             {isLoading ? (
               <div className="flex flex-col items-center gap-4">
-                <Skeleton className="h-10 w-48" />
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <p className="text-sm text-muted-foreground">Procesando archivo...</p>
               </div>
             ) : (
@@ -440,7 +489,7 @@ export function OnuFinder() {
                             value={url}
                             onChange={(e) => setUrl(e.target.value)}
                          />
-                         <Button onClick={handleUrlFetch} variant="secondary">
+                         <Button onClick={handleUrlFetch} variant="secondary" disabled={isLoading}>
                            <Link className="h-4 w-4" />
                          </Button>
                        </div>
@@ -499,7 +548,24 @@ export function OnuFinder() {
                     </Button>
                 </div>
             </div>
-            <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileName}</span></p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
+                <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileName}</span></p>
+                {sheetNames.length > 1 && (
+                    <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                        <Label htmlFor="sheet-selector" className="text-muted-foreground">Hoja:</Label>
+                        <Select value={selectedSheet} onValueChange={setSelectedSheet}>
+                            <SelectTrigger id="sheet-selector" className="h-8 w-auto max-w-[200px]">
+                                <SelectValue placeholder="Selecciona una hoja" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {sheetNames.map(name => (
+                                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+            </div>
          </div>
 
          <Card>
@@ -539,7 +605,7 @@ export function OnuFinder() {
                 </TabsTrigger>
             </TabsList>
             <TabsContent value="activas">
-                {isPending ? (
+                {isPending || isLoading ? (
                   <div className="space-y-4 pt-4">
                       {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
                   </div>
@@ -548,7 +614,7 @@ export function OnuFinder() {
                 )}
             </TabsContent>
             <TabsContent value="retiradas">
-                 {isPending ? (
+                 {isPending || isLoading ? (
                   <div className="space-y-4 pt-4">
                      <Skeleton className="h-40 w-full" />
                   </div>
