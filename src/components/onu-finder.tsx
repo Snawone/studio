@@ -383,16 +383,16 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     const idSuffix = onuId.slice(-6);
   
     return (
-      <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className="group flex flex-col justify-between">
+      <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className={`group flex flex-col justify-between transition-all duration-300 ${isExactMatch ? 'border-primary shadow-lg scale-105' : ''}`}>
         <div>
           <CardHeader className="pb-4">
-            <CardTitle className="flex items-start text-base text-primary break-all">
+            <CardTitle className="flex items-start text-base text-primary break-all font-mono">
               <Tag className="mr-2 h-4 w-4 flex-shrink-0 mt-1"/>
               <div>
                 {isExactMatch ? (
                   <>
-                    <span>{idPrefix}</span>
-                    <span className="font-bold text-lg">{idSuffix}</span>
+                    <span className="text-muted-foreground">{idPrefix}</span>
+                    <span className="font-bold text-lg text-foreground">{idSuffix}</span>
                   </>
                 ) : (
                   onuId
@@ -400,7 +400,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
+          <CardContent className="flex flex-col gap-3 text-sm">
             <p className="flex items-center font-medium">
               <Server className="mr-2 h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground mr-2">Estante:</span> 
@@ -409,18 +409,18 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
             <p className="flex items-center font-medium">
               <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground mr-2">Agregada:</span> 
-              <span className="text-foreground">{formatDate(row.addedDate)}</span>
+              <span className="text-foreground text-xs">{formatDate(row.addedDate)}</span>
             </p>
             {isRetired && row.removedDate && (
                <p className="flex items-center font-medium text-destructive/80">
                   <Trash2 className="mr-2 h-4 w-4" />
                   <span className="mr-2">Retirada:</span> 
-                  <span className="">{formatDate(row.removedDate)}</span>
+                  <span className="text-xs">{formatDate(row.removedDate)}</span>
               </p>
             )}
           </CardContent>
         </div>
-        <CardFooter className="p-4">
+        <CardFooter className="p-4 bg-muted/30">
           {isRetired ? (
             <Button 
               variant="outline"
@@ -444,6 +444,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
                 setIsConfirmRetireOpen(true);
               }}
             >
+              <Trash2 className="mr-2 h-4 w-4" />
               Retirar
             </Button>
           )}
@@ -603,9 +604,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
             <div className="flex justify-between items-start gap-4 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2">
-                         <div className="md:hidden">
-                            <SidebarTrigger />
-                         </div>
+                         
                         <h2 className="text-2xl font-headline font-semibold">
                             {activeView === 'activas' ? `Inventario de ONUs Activas (${data.length})` : `ONUs Retiradas (${removedOnus.length})`}
                         </h2>
