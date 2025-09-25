@@ -16,6 +16,11 @@ export type OnuData = {
   status: 'active' | 'removed';
 };
 
+export type OnuFromSheet = {
+  'ONU ID': string;
+  'Shelf': string;
+};
+
 export type UserProfile = {
   id: string;
   name: string;

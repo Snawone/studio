@@ -1,9 +1,9 @@
 
 "use client";
 
-import { useState, useMemo, useTransition, useRef, useEffect } from "react";
+import { useState, useMemo, useTransition, useRef, useEffect, Dispatch, SetStateAction } from "react";
 import * as XLSX from "xlsx";
-import { type OnuData, type OnuHistoryEntry, type FileInfo } from "@/lib/data";
+import { type OnuData, type OnuHistoryEntry, type FileInfo, type OnuFromSheet } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -63,29 +63,32 @@ type OnuFinderProps = {
     userId: string;
     fileInfo: FileInfo | null;
     isLoadingOnus: boolean;
+    onusFromLocalFile: OnuFromSheet[];
+    setOnusFromLocalFile: Dispatch<SetStateAction<OnuFromSheet[]>>;
+    localFileName: string | null;
+    setLocalFileName: Dispatch<SetStateAction<string | null>>;
+    processExcel: (arrayBuffer: ArrayBuffer, sheetName?: string) => OnuFromSheet[];
 }
 
-type OnuFromSheet = {
-  'ONU ID': string;
-  'Shelf': string;
-}
 
 export function OnuFinder({ 
   activeView, 
-  onusFromFirestore,
+  onusFromFirestore: mergedOnus,
   searchList,
   allShelves,
   userId,
   fileInfo,
-  isLoadingOnus
+  isLoadingOnus,
+  onusFromLocalFile,
+  setOnusFromLocalFile,
+  localFileName,
+  setLocalFileName,
+  processExcel,
 }: OnuFinderProps) {
   const firestore = useFirestore();
   const { profile } = useAuthContext();
   const storage = getStorage();
   
-  const [onusFromCloudSheet, setOnusFromCloudSheet] = useState<OnuFromSheet[]>([]);
-  const [onusFromLocalFile, setOnusFromLocalFile] = useState<OnuFromSheet[]>([]);
-  const [localFileName, setLocalFileName] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   const [error, setError] = useState<string | null>(null);
@@ -101,99 +104,12 @@ export function OnuFinder({
   const [isConfirmRetireOpen, setIsConfirmRetireOpen] = useState(false);
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
   
-  const [mergedOnus, setMergedOnus] = useState<OnuData[]>([]);
-
-  useEffect(() => {
-      const fetchAndProcessFile = async () => {
-        if (!fileInfo || !fileInfo.fileUrl) {
-          setOnusFromCloudSheet([]);
-          return;
-        }
-
-        setError(null);
-        try {
-          const storageRef = ref(storage, fileInfo.fileUrl);
-          const arrayBuffer = await getBytes(storageRef);
-          
-          const jsonData = processExcel(arrayBuffer, fileInfo.sheetName);
-          setOnusFromCloudSheet(jsonData);
-
-        } catch (err: any) {
-          console.error("Error fetching or processing file:", err);
-          setError(err.message || 'No se pudo obtener o procesar el archivo desde la URL.');
-          setOnusFromCloudSheet([]);
-        } 
-      };
-      
-      fetchAndProcessFile();
-  }, [fileInfo, storage]);
-
-
-  const processExcel = (arrayBuffer: ArrayBuffer, sheetName?: string) => {
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const targetSheetName = sheetName || workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[targetSheetName];
-      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-
-      if (jsonData.length < 2) {
-        throw new Error('La hoja de cálculo está vacía o tiene un formato incorrecto.');
-      }
-
-      const headers = jsonData[0].map(h => String(h || '').trim());
-      const allOnus: OnuFromSheet[] = [];
-
-      for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-          const shelf = headers[colIndex];
-          if (shelf) {
-              for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
-                  const row = jsonData[rowIndex];
-                  if(row) {
-                      const onuId = row[colIndex];
-                      if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
-                          allOnus.push({
-                              'ONU ID': String(onuId),
-                              'Shelf': shelf,
-                          });
-                      }
-                  }
-              }
-          }
-      }
-      return allOnus;
-  }
-
-  useEffect(() => {
-    const onusFromSheet = localFileName ? onusFromLocalFile : onusFromCloudSheet;
-    
-    if (!onusFromSheet.length) {
-      setMergedOnus(onusFromFirestore.filter(onu => onu.status === activeView.slice(0, -1)));
-      return;
-    }
-
-    const firestoreMap = new Map(onusFromFirestore.map(onu => [onu.id, onu]));
-    
-    const combined = onusFromSheet.map(sheetOnu => {
-      const firestoreData = firestoreMap.get(sheetOnu['ONU ID']);
-      return {
-        id: sheetOnu['ONU ID'],
-        'ONU ID': sheetOnu['ONU ID'],
-        'Shelf': sheetOnu['Shelf'],
-        status: firestoreData?.status || 'active',
-        addedDate: firestoreData?.addedDate || new Date().toISOString(),
-        removedDate: firestoreData?.removedDate,
-        history: firestoreData?.history || [],
-      };
-    });
-    
-    setMergedOnus(combined.filter(onu => onu.status === (activeView === 'activas' ? 'active' : 'removed')));
-  }, [onusFromCloudSheet, onusFromLocalFile, localFileName, onusFromFirestore, activeView]);
-  
-
   const handleCloudUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setError(null);
+    clearLocalFile();
 
     try {
       const filePath = `inventory/onus.xlsx`;
