@@ -61,6 +61,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             ...doc.data(),
           } as UserProfile;
 
+          // Hardcoded admin check
           if (user.email === 'santiagowyka@gmail.com') {
             userProfile.isAdmin = true;
           }
@@ -78,6 +79,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setAuthLoading(false);
       });
       return () => unsubscribe();
+    } else {
+      // If there's no user, we are not loading auth data anymore.
+      setAuthLoading(false);
     }
   }, [user, firestore, router]);
 
