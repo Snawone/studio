@@ -48,9 +48,7 @@ export default function Home() {
                 ONUs & SBTs
               </h1>
             </div>
-            <SidebarTrigger asChild>
-                <Button variant="ghost" size="icon" />
-            </SidebarTrigger>
+            <SidebarTrigger />
           </div>
         </header>
         <main className="container mx-auto px-4 py-8 md:px-6 md:py-12">
