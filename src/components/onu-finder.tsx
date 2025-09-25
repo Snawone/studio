@@ -96,7 +96,7 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   useEffect(() => {
-    if (onus) {
+    if (onus && onus.length > 0) {
       setIsDataLoaded(true);
     }
     setIsHydrating(false);
@@ -136,7 +136,7 @@ export function OnuFinder({
                                 status: 'active',
                             };
                             const docRef = doc(firestore, 'onus', newOnu.id);
-                            batch.set(docRef, newOnu);
+                            batch.set(docRef, newOnu, { merge: true });
                         }
                     }
                 }
@@ -307,20 +307,6 @@ export function OnuFinder({
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
   }, [onus, activeView]);
 
-  const resetState = () => {
-    // This action could be repurposed to delete all ONUs, but would require admin rights.
-    // For now, it just resets the file upload UI.
-    setWorkbook(null);
-    setSheetNames([]);
-    setSelectedSheet('');
-    setFileName(null);
-    setError(null);
-    setSearchTerm('');
-    setUrl('');
-    if(fileInputRef.current) {
-        fileInputRef.current.value = '';
-    }
-  };
   
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
@@ -673,9 +659,6 @@ export function OnuFinder({
                               </DialogFooter>
                           </DialogContent>
                       </Dialog>
-                      <Button variant="destructive" size="sm" onClick={resetState}>
-                          Cargar otro archivo
-                      </Button>
                   </div>
                 )}
             </div>
