@@ -38,28 +38,31 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
   const handleRetireOnu = (onuToRetire: OnuData) => {
     const removedDate = new Date().toISOString();
 
-    let newActiveOnus = [...allActiveOnus];
-    let newRemovedOnus = [...allRemovedOnus];
+    // Remove from search list first
+    const newSearchList = searchList.filter(onu => onu['ONU ID'] !== onuToRetire['ONU ID']);
 
-    // Find the full ONU object from the main lists to ensure we have the complete history
-    const completeOnuData = allActiveOnus.find(o => o['ONU ID'] === onuToRetire['ONU ID']) || allRemovedOnus.find(o => o['ONU ID'] === onuToRetire['ONU ID']) || onuToRetire;
-    
     const isAlreadyRemoved = allRemovedOnus.some(o => o['ONU ID'] === onuToRetire['ONU ID']);
 
-    if (!isAlreadyRemoved) {
-        const retiredOnu: OnuData = { 
-            ...completeOnuData, 
-            removedDate,
-            history: [...(completeOnuData.history || []), { action: 'removed', date: removedDate }]
-        };
-        // Filter out from active list
-        newActiveOnus = allActiveOnus.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
-        // Add the updated one to removed list
-        newRemovedOnus = [retiredOnu, ...allRemovedOnus];
+    // If it's already removed, we just need to update the search list
+    if (isAlreadyRemoved) {
+        onDataChange(allActiveOnus, allRemovedOnus, newSearchList);
+        setOnuToRetire(null);
+        return;
     }
+
+    // If it was active, move it to removed
+    const newActiveOnus = allActiveOnus.filter(onu => onu['ONU ID'] !== onuToRetire['ONU ID']);
     
-    // Always remove from search list
-    const newSearchList = searchList.filter(onu => onu['ONU ID'] !== onuToRetire['ONU ID']);
+    // Find the full ONU object to preserve its history
+    const completeOnuData = allActiveOnus.find(o => o['ONU ID'] === onuToRetire['ONU ID']) || onuToRetire;
+
+    const retiredOnu: OnuData = { 
+        ...completeOnuData, 
+        removedDate,
+        history: [...(completeOnuData.history || []), { action: 'removed', date: removedDate }]
+    };
+
+    const newRemovedOnus = [retiredOnu, ...allRemovedOnus];
 
     onDataChange(newActiveOnus, newRemovedOnus, newSearchList);
     setOnuToRetire(null);
@@ -71,7 +74,10 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
     let removedOnusCopy = [...allRemovedOnus];
 
     searchList.forEach(onuInSearch => {
-      // Check if the ONU is currently in the active list
+      // Check if it's not already in the removed list
+      const isAlreadyRemoved = removedOnusCopy.some(o => o['ONU ID'] === onuInSearch['ONU ID']);
+      if (isAlreadyRemoved) return;
+      
       const activeIndex = activeOnusCopy.findIndex(o => o['ONU ID'] === onuInSearch['ONU ID']);
       
       if (activeIndex !== -1) {
@@ -82,19 +88,11 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
               history: [...(onuToMove.history || []), { action: 'removed', date }]
           };
           
-          // Remove from active list
           activeOnusCopy.splice(activeIndex, 1);
-          
-          // Add to removed list, preventing duplicates if it was somehow already there
-          if (!removedOnusCopy.some(o => o['ONU ID'] === retiredOnu['ONU ID'])) {
-            removedOnusCopy.push(retiredOnu);
-          }
+          removedOnusCopy.unshift(retiredOnu); // Add to the beginning
       }
     });
     
-    // Sort removed ONUs by date
-    removedOnusCopy.sort((a, b) => new Date(b.removedDate!).getTime() - new Date(a.removedDate!).getTime());
-
     // Update state with the modified lists and an empty search list
     onDataChange(activeOnusCopy, removedOnusCopy, []);
     setIsConfirmRetireAllOpen(false);
