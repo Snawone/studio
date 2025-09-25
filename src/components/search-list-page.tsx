@@ -36,23 +36,26 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
   };
   
   const handleRetireOnu = (onuToRetire: OnuData) => {
-    const isAlreadyRemoved = allRemovedOnus.some(o => o['ONU ID'] === onuToRetire['ONU ID']);
+    const removedDate = new Date().toISOString();
     
-    let newActiveOnus = [...allActiveOnus];
-    let newRemovedOnus = [...allRemovedOnus];
-    
-    if (!isAlreadyRemoved) {
-        const removedDate = new Date().toISOString();
-        const retiredOnu: OnuData = { 
-            ...onuToRetire, 
-            removedDate,
-            history: [...(onuToRetire.history || []), { action: 'removed', date: removedDate }]
-        };
-        newActiveOnus = allActiveOnus.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
-        newRemovedOnus = [retiredOnu, ...allRemovedOnus];
-    }
+    // Find the full ONU object from either active or removed lists to ensure we have the complete history
+    const completeOnuData = allActiveOnus.find(o => o['ONU ID'] === onuToRetire['ONU ID']) || allRemovedOnus.find(o => o['ONU ID'] === onuToRetire['ONU ID']) || onuToRetire;
 
+    const retiredOnu: OnuData = { 
+        ...completeOnuData, 
+        removedDate,
+        history: [...(completeOnuData.history || []), { action: 'removed', date: removedDate }]
+    };
+
+    // Filter out from active list
+    const newActiveOnus = allActiveOnus.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
+    
+    // Remove the old version from removed list (if it exists) and add the updated one
+    const newRemovedOnus = [retiredOnu, ...allRemovedOnus.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID'])];
+
+    // Remove from search list
     const newSearchList = searchList.filter(onu => onu['ONU ID'] !== onuToRetire['ONU ID']);
+
     onDataChange(newActiveOnus, newRemovedOnus, newSearchList);
     setOnuToRetire(null);
   };
@@ -63,19 +66,19 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
     let removedOnus = [...allRemovedOnus];
 
     searchList.forEach(onuInSearch => {
-        const isAlreadyRemoved = removedOnus.some(o => o['ONU ID'] === onuInSearch['ONU ID']);
-        if (!isAlreadyRemoved) {
-            const retiredOnu: OnuData = {
-                ...onuInSearch,
-                removedDate: date,
-                history: [...(onuInSearch.history || []), { action: 'removed', date }]
-            };
-            activeOnus = activeOnus.filter(o => o['ONU ID'] !== onuInSearch['ONU ID']);
-            removedOnus.push(retiredOnu);
-        }
+      const isAlreadyRemoved = removedOnus.some(o => o['ONU ID'] === onuInSearch['ONU ID']);
+      if (!isAlreadyRemoved) {
+          const completeOnuData = allActiveOnus.find(o => o['ONU ID'] === onuInSearch['ONU ID']) || onuInSearch;
+          const retiredOnu: OnuData = {
+              ...completeOnuData,
+              removedDate: date,
+              history: [...(completeOnuData.history || []), { action: 'removed', date }]
+          };
+          activeOnus = activeOnus.filter(o => o['ONU ID'] !== onuInSearch['ONU ID']);
+          removedOnus.push(retiredOnu);
+      }
     });
     
-    // Sort removed ONUs to have the most recent ones first
     removedOnus.sort((a, b) => new Date(b.removedDate!).getTime() - new Date(a.removedDate!).getTime());
 
     onDataChange(activeOnus, removedOnus, []);
@@ -101,7 +104,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
             Lista de Búsqueda ({searchList.length})
           </h2>
           <p className="text-muted-foreground text-sm">
-            Aquí están las ONUs que has marcado. Puedes retirarlas individualmente o todas a la vez.
+            Aquí están las ONUs que has marcado. Puedes marcarlas como encontradas individualmente o todas a la vez.
           </p>
         </div>
         {searchList.length > 0 && (
@@ -190,7 +193,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar como encontrada?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá la ONU <strong className='break-all'>{onuToRetire?.['ONU ID']}</strong> a la lista de "Retiradas" (si no lo estaba ya) y la quitará de la lista de búsqueda.
+              Esto moverá la ONU <strong className='break-all'>{onuToRetire?.['ONU ID']}</strong> a la lista de "Retiradas" y la quitará de la lista de búsqueda.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -208,7 +211,7 @@ export function SearchListPage({ searchList, onDataChange, allActiveOnus, allRem
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar todas como encontradas?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá las {searchList.length} ONUs de esta lista a "Retiradas" (si no lo estaban ya) y limpiará la lista de búsqueda. ¿Estás seguro?
+              Esto moverá las {searchList.length} ONUs de esta lista a "Retiradas" y limpiará la lista de búsqueda. ¿Estás seguro?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
