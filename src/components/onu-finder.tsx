@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import { useState, useMemo, useTransition, useRef, useEffect } from "react";
@@ -294,8 +293,10 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
   
   const shelves = useMemo(() => {
     const shelfMap: Record<string, OnuData[]> = {};
+    const sourceData = activeView === 'activas' ? data : [];
+    
     if (activeView === 'activas') {
-        filteredResults.forEach(onu => {
+        sourceData.forEach(onu => {
             const shelf = onu.Shelf || 'Sin Estante';
             if (!shelfMap[shelf]) {
                 shelfMap[shelf] = [];
@@ -304,7 +305,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
         });
     }
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [filteredResults, activeView]);
+  }, [data, activeView]);
 
   const allShelves = useMemo(() => {
     const uniqueShelves = new Set(data.map(onu => onu.Shelf));
@@ -380,6 +381,22 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     </Card>
   );
 
+  const renderSearchResults = () => (
+    <div className="space-y-4">
+        {filteredResults.length > 0 ? (
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+               {filteredResults.map((onu, index) => renderOnuCard(onu, index, activeView === 'retiradas'))}
+           </div>
+        ) : (
+            <div className="text-center py-16 border-2 border-dashed rounded-lg">
+                <p className="text-muted-foreground">
+                  No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.
+                </p>
+            </div>
+        )}
+    </div>
+  );
+
   const renderShelfAccordion = () => (
     <div className="space-y-4">
         {shelves.length > 0 ? (
@@ -404,10 +421,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
                 <p className="text-muted-foreground">
-                  {searchTerm 
-                    ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
-                    : "No hay ONUs activas para mostrar."
-                  }
+                  "No hay ONUs activas para mostrar."
                 </p>
             </div>
         )}
@@ -624,7 +638,13 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
                     {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-24 w-full" /> ))}
                 </div>
             ) : (
-                activeView === 'activas' ? renderShelfAccordion() : renderRemovedList()
+              <>
+                {searchTerm ? (
+                  renderSearchResults()
+                ) : (
+                  activeView === 'activas' ? renderShelfAccordion() : renderRemovedList()
+                )}
+              </>
             )}
         </div>
         </>
@@ -667,3 +687,5 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     </section>
   );
 }
+
+    
