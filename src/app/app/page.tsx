@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { collection, doc } from 'firebase/firestore';
-import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger, SidebarFooter } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
 import { Boxes, Trash2, Settings, History, SearchCheck, Loader2, LogOut } from 'lucide-react';
