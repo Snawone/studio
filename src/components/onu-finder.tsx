@@ -96,11 +96,18 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   useEffect(() => {
-    if (onus && onus.length > 0) {
+    // This effect now simply marks hydration as complete.
+    // The presence of `onus` data is handled by the loading state.
+    setIsHydrating(false);
+  }, []);
+
+  useEffect(() => {
+    // This effect handles the data loaded state based on the `onus` prop.
+    // We only set it to true once, when data first arrives.
+    if (onus && onus.length > 0 && !isDataLoaded) {
       setIsDataLoaded(true);
     }
-    setIsHydrating(false);
-  }, [onus]);
+  }, [onus, isDataLoaded]);
 
 
   const parseAndUploadSheetData = async (wb: XLSX.WorkBook, sheetName: string) => {
@@ -499,7 +506,7 @@ export function OnuFinder({
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
                 <p className="text-muted-foreground">
-                  "No hay ONUs activas para mostrar."
+                  No hay ONUs activas para mostrar. El administrador puede cargar un archivo.
                 </p>
             </div>
         )}
@@ -534,10 +541,11 @@ export function OnuFinder({
     );
   }
 
+  const showUploadCard = !isDataLoaded && profile?.isAdmin;
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
-      {onus.length === 0 && profile?.isAdmin ? (
+      {showUploadCard ? (
         <Card className="text-center max-w-xl mx-auto">
           <CardHeader>
             <div className="mx-auto bg-secondary p-3 rounded-full w-fit">
@@ -719,7 +727,14 @@ export function OnuFinder({
         <div className="mt-6">
             {isPending || isLoading ? (
                 <div className="space-y-4 pt-4">
-                    {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-24 w-full" /> ))}
+                    {[...Array(8)].map((_, i) => ( 
+                      <div key={i} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <Skeleton className="h-36 w-full" />
+                        <Skeleton className="h-36 w-full" />
+                        <Skeleton className="h-36 w-full" />
+                        <Skeleton className="h-36 w-full" />
+                      </div>
+                    ))}
                 </div>
             ) : (
               <>
