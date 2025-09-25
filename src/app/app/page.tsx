@@ -6,17 +6,18 @@ import { collection, query, orderBy } from 'firebase/firestore';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger, SidebarFooter } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
-import { Boxes, Trash2, Settings, History, SearchCheck, Loader2, LogOut, PackagePlus } from 'lucide-react';
+import { Boxes, Trash2, Settings, History, SearchCheck, Loader2, LogOut, PackagePlus, Warehouse } from 'lucide-react';
 import { OptionsPage } from '@/components/options-page';
 import { HistoryPage } from '@/components/history-page';
 import { SearchListPage } from '@/components/search-list-page';
 import { StockManagementPage } from '@/components/stock-management-page';
+import { ShelvesManagementPage } from '@/components/shelves-management-page';
 import { useCollection, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
 import { type OnuData, type UserProfile } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 
-type ViewType = 'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda' | 'cargar-stock';
+type ViewType = 'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda' | 'cargar-stock' | 'estantes';
 
 export default function AppPage() {
   const [activeView, setActiveView] = useState<ViewType>('activas');
@@ -60,6 +61,8 @@ export default function AppPage() {
                   activeView="retiradas" 
                   {...commonProps}
                 />;
+      case 'estantes':
+        return <ShelvesManagementPage />;
       case 'cargar-stock':
         return <StockManagementPage />;
       case 'opciones':
@@ -118,12 +121,20 @@ export default function AppPage() {
               </SidebarMenuButton>
             </SidebarMenuItem>
             {profile.isAdmin && (
-              <SidebarMenuItem>
-                  <SidebarMenuButton onClick={() => setActiveView('cargar-stock')} isActive={activeView === 'cargar-stock'} tooltip='Cargar Stock'>
-                      <PackagePlus />
-                      Cargar Stock
-                  </SidebarMenuButton>
-              </SidebarMenuItem>
+              <>
+                <SidebarMenuItem>
+                    <SidebarMenuButton onClick={() => setActiveView('estantes')} isActive={activeView === 'estantes'} tooltip='Estantes'>
+                        <Warehouse />
+                        Estantes
+                    </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                    <SidebarMenuButton onClick={() => setActive_View('cargar-stock')} isActive={activeView === 'cargar-stock'} tooltip='Cargar Stock'>
+                        <PackagePlus />
+                        Cargar Stock
+                    </SidebarMenuButton>
+                </SidebarMenuItem>
+              </>
             )}
             <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => setActiveView('opciones')} isActive={activeView === 'opciones'} tooltip='Opciones'>
