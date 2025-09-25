@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo, useTransition, useRef, useEffect } from "react";
@@ -44,12 +45,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { SidebarTrigger } from "./ui/sidebar";
 
 
-export function OnuFinder() {
+type OnuFinderProps = {
+    activeView: 'activas' | 'retiradas';
+}
+
+export function OnuFinder({ activeView }: OnuFinderProps) {
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
@@ -280,23 +285,26 @@ export function OnuFinder() {
   };
 
   const filteredResults = useMemo(() => {
-    if (!searchTerm) return data;
-    return data.filter((row) => 
+    const sourceData = activeView === 'activas' ? data : removedOnus;
+    if (!searchTerm) return sourceData;
+    return sourceData.filter((row) => 
         row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, data]);
+  }, [searchTerm, data, removedOnus, activeView]);
   
   const shelves = useMemo(() => {
     const shelfMap: Record<string, OnuData[]> = {};
-    filteredResults.forEach(onu => {
-        const shelf = onu.Shelf || 'Sin Estante';
-        if (!shelfMap[shelf]) {
-            shelfMap[shelf] = [];
-        }
-        shelfMap[shelf].push(onu);
-    });
+    if (activeView === 'activas') {
+        filteredResults.forEach(onu => {
+            const shelf = onu.Shelf || 'Sin Estante';
+            if (!shelfMap[shelf]) {
+                shelfMap[shelf] = [];
+            }
+            shelfMap[shelf].push(onu);
+        });
+    }
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [filteredResults]);
+  }, [filteredResults, activeView]);
 
   const allShelves = useMemo(() => {
     const uniqueShelves = new Set(data.map(onu => onu.Shelf));
@@ -408,13 +416,18 @@ export function OnuFinder() {
 
   const renderRemovedList = () => (
       <div className="space-y-4">
-        {removedOnus.length > 0 ? (
+        {filteredResults.length > 0 ? (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-               {removedOnus.map((onu, index) => renderOnuCard(onu, index, true))}
+               {filteredResults.map((onu, index) => renderOnuCard(onu, index, true))}
            </div>
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                <p className="text-muted-foreground">No hay ONUs retiradas.</p>
+                <p className="text-muted-foreground">
+                  {searchTerm 
+                    ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
+                    : "No hay ONUs retiradas."
+                  }
+                </p>
             </div>
         )}
       </div>
@@ -422,7 +435,7 @@ export function OnuFinder() {
   
   if (isHydrating) {
     return (
-        <section className="w-full max-w-7xl mx-auto flex flex-col gap-8 justify-center items-center min-h-screen">
+        <section className="w-full max-w-7xl mx-auto flex flex-col gap-8 justify-center items-center min-h-[calc(100vh-200px)]">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
           <p className="text-muted-foreground">Cargando datos...</p>
         </section>
@@ -502,8 +515,18 @@ export function OnuFinder() {
       ) : (
         <>
          <div className="space-y-4">
-            <div className="flex justify-between items-center gap-4 flex-wrap">
-                <h2 className="text-2xl font-headline font-semibold">Inventario de ONUs</h2>
+            <div className="flex justify-between items-start gap-4 flex-wrap">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <SidebarTrigger className="md:hidden" />
+                        <h2 className="text-2xl font-headline font-semibold">
+                            {activeView === 'activas' ? `Inventario de ONUs Activas (${data.length})` : `ONUs Retiradas (${removedOnus.length})`}
+                        </h2>
+                    </div>
+                    <p className="text-muted-foreground text-sm mt-1">
+                        {activeView === 'activas' ? 'Visualiza y gestiona las ONUs disponibles en los estantes.' : 'Consulta el historial de ONUs que han sido retiradas.'}
+                    </p>
+                </div>
                 <div className="flex gap-2">
                     <Dialog open={isAddOnuOpen} onOpenChange={setIsAddOnuOpen}>
                         <DialogTrigger asChild>
@@ -571,7 +594,7 @@ export function OnuFinder() {
          <Card>
             <CardHeader>
                 <CardTitle>Búsqueda Rápida</CardTitle>
-                <CardDescription>Busca por ID en todas las ONUs, tanto activas como retiradas.</CardDescription>
+                <CardDescription>Busca por ID en la vista actual.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="max-w-xl">
@@ -581,7 +604,7 @@ export function OnuFinder() {
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${data.length + removedOnus.length} ONUs...`}
+                    placeholder={`Buscar entre ${filteredResults.length} ONUs...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -595,34 +618,15 @@ export function OnuFinder() {
             </CardContent>
          </Card>
           
-          <Tabs defaultValue="activas" className="mt-6">
-            <TabsList>
-                <TabsTrigger value="activas">
-                    Activas <Badge variant="secondary" className="ml-2">{data.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="retiradas">
-                    Retiradas <Badge variant="outline" className="ml-2">{removedOnus.length}</Badge>
-                </TabsTrigger>
-            </TabsList>
-            <TabsContent value="activas">
-                {isPending || isLoading ? (
-                  <div className="space-y-4 pt-4">
-                      {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
-                  </div>
-                ) : (
-                  renderShelfAccordion()
-                )}
-            </TabsContent>
-            <TabsContent value="retiradas">
-                 {isPending || isLoading ? (
-                  <div className="space-y-4 pt-4">
-                     <Skeleton className="h-40 w-full" />
-                  </div>
-                ) : (
-                  renderRemovedList()
-                )}
-            </TabsContent>
-          </Tabs>
+        <div className="mt-6">
+            {isPending || isLoading ? (
+                <div className="space-y-4 pt-4">
+                    {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-24 w-full" /> ))}
+                </div>
+            ) : (
+                activeView === 'activas' ? renderShelfAccordion() : renderRemovedList()
+            )}
+        </div>
         </>
       )}
 
@@ -660,7 +664,6 @@ export function OnuFinder() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </section>
   );
 }
