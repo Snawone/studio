@@ -52,7 +52,7 @@ function ShelfForm({
   isEdit = false,
 }: {
   shelf?: ShelfFormValues;
-  onSubmit: (values: ShelfFormValues) => void;
+  onSubmit: (values: any) => void;
   isSubmitting: boolean;
   submitText: string;
   isEdit?: boolean;
@@ -65,7 +65,7 @@ function ShelfForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
+        <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <FormField
               control={form.control}
@@ -109,14 +109,14 @@ function ShelfForm({
               )}
             />
           </div>
-        </CardContent>
-        <CardFooter>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            <PlusCircle className="mr-2 h-4 w-4" />
-            {isSubmitting ? 'Guardando...' : submitText}
-          </Button>
-        </CardFooter>
+        </div>
+        <div className="mt-4 flex justify-end">
+            <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <PlusCircle className="mr-2 h-4 w-4" />
+                {isSubmitting ? 'Guardando...' : submitText}
+            </Button>
+        </div>
       </form>
     </Form>
   );
@@ -247,55 +247,51 @@ export function StockManagementPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Warehouse className="h-5 w-5 text-primary"/>Crear Nuevo Estante</CardTitle>
-          <CardDescription>
-            Define un nuevo espacio para almacenar dispositivos.
-          </CardDescription>
+            <CardTitle className="flex items-center gap-2"><Warehouse className="h-5 w-5 text-primary"/>Gestión de Estantes</CardTitle>
+            <CardDescription>Crea nuevos estantes y visualiza los existentes.</CardDescription>
         </CardHeader>
-        <ShelfForm
-          onSubmit={handleCreateShelf}
-          isSubmitting={isCreatingShelf}
-          submitText="Crear Estante"
-        />
-      </Card>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><List className="h-5 w-5 text-primary"/>Estantes Existentes</CardTitle>
-          <CardDescription>
-            Visualiza y edita los estantes de tu inventario.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {isLoadingShelves ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="animate-spin text-muted-foreground"/>
+        <CardContent className="space-y-6">
+            <div>
+                <h3 className="font-medium mb-2">Crear Nuevo Estante</h3>
+                <ShelfForm
+                    onSubmit={handleCreateShelf}
+                    isSubmitting={isCreatingShelf}
+                    submitText="Crear Estante"
+                />
             </div>
-          ) : shelves && shelves.length > 0 ? (
-             <div className="border rounded-md">
-                {shelves.map((shelf, index) => (
-                    <div key={shelf.id} className={`flex justify-between items-center p-3 ${index < shelves.length -1 ? 'border-b' : ''}`}>
-                        <div>
-                            <p className="font-medium">{shelf.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                                {shelf.itemCount}/{shelf.capacity} {shelf.type.toUpperCase()}s
-                            </p>
-                        </div>
-                        <Button variant="ghost" size="icon" onClick={() => setEditingShelf(shelf)}>
-                            <Edit className="h-4 w-4"/>
-                            <span className="sr-only">Editar estante {shelf.name}</span>
-                        </Button>
+
+            <div>
+                <h3 className="font-medium mb-2">Estantes Existentes</h3>
+                {isLoadingShelves ? (
+                    <div className="flex items-center justify-center py-8">
+                        <Loader2 className="animate-spin text-muted-foreground"/>
                     </div>
-                ))}
-             </div>
-          ) : (
-            <p className="text-center text-sm text-muted-foreground py-8">
-              No hay estantes creados.
-            </p>
-          )}
+                ) : shelves && shelves.length > 0 ? (
+                    <div className="border rounded-md">
+                        {shelves.map((shelf, index) => (
+                            <div key={shelf.id} className={`flex justify-between items-center p-3 ${index < shelves.length -1 ? 'border-b' : ''}`}>
+                                <div>
+                                    <p className="font-medium">{shelf.name}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                        {shelf.itemCount}/{shelf.capacity} {shelf.type.toUpperCase()}s
+                                    </p>
+                                </div>
+                                <Button variant="ghost" size="icon" onClick={() => setEditingShelf(shelf)}>
+                                    <Edit className="h-4 w-4"/>
+                                    <span className="sr-only">Editar estante {shelf.name}</span>
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-center text-sm text-muted-foreground py-8">
+                        No hay estantes creados.
+                    </p>
+                )}
+            </div>
         </CardContent>
       </Card>
-
+      
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Server className="h-5 w-5 text-primary"/>Cargar Dispositivo</CardTitle>
@@ -376,18 +372,17 @@ export function StockManagementPage() {
               Modifica el nombre y la capacidad del estante. El tipo no se puede cambiar.
             </DialogDescription>
           </DialogHeader>
-          <ShelfForm
-            shelf={editingShelf ? { name: editingShelf.name, capacity: editingShelf.capacity, type: editingShelf.type } : undefined}
-            onSubmit={handleUpdateShelf}
-            isSubmitting={isUpdatingShelf}
-            submitText="Guardar Cambios"
-            isEdit={true}
-          />
+          <div className="pt-4">
+            <ShelfForm
+                shelf={editingShelf ? { name: editingShelf.name, capacity: editingShelf.capacity, type: editingShelf.type } : undefined}
+                onSubmit={handleUpdateShelf}
+                isSubmitting={isUpdatingShelf}
+                submitText="Guardar Cambios"
+                isEdit={true}
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </section>
   );
 }
-
-
-    
