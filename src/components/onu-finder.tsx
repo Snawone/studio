@@ -45,7 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw } from "lucide-react";
+import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
@@ -55,6 +55,7 @@ export function OnuFinder() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -84,6 +85,8 @@ export function OnuFinder() {
     } catch (e) {
       console.error("Failed to load data from localStorage", e);
       localStorage.clear();
+    } finally {
+      setIsHydrating(false);
     }
   }, []);
 
@@ -389,7 +392,16 @@ export function OnuFinder() {
             </div>
         )}
     </div>
-  )
+  );
+  
+  if (isHydrating) {
+    return (
+        <section className="w-full max-w-7xl mx-auto flex flex-col gap-8 justify-center items-center min-h-screen">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Cargando datos...</p>
+        </section>
+    );
+  }
 
 
   return (

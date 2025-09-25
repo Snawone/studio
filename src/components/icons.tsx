@@ -1,4 +1,4 @@
-import type { SVGProps } from "react";
+import { type SVGProps, Loader2 } from "lucide-react";
 
 export const Icons = {
   logo: (props: SVGProps<SVGSVGElement>) => (
@@ -19,4 +19,7 @@ export const Icons = {
       <path d="m17.5 10.5 2 2" />
     </svg>
   ),
+  spinner: Loader2,
 };
+
+    
