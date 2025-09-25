@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { type OnuData } from '@/lib/data';
+import { type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ import { es } from 'date-fns/locale';
 import { useFirestore } from '@/firebase';
 import { writeBatch, doc } from 'firebase/firestore';
 import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { useAuthContext } from '@/firebase/auth/auth-provider';
 
 type SearchListPageProps = {
   searchListOnus: OnuData[];
@@ -31,6 +32,7 @@ type SearchListPageProps = {
 
 export function SearchListPage({ searchListOnus, searchListIds, userId }: SearchListPageProps) {
   const firestore = useFirestore();
+  const { profile } = useAuthContext();
   const [onuToRetire, setOnuToRetire] = useState<OnuData | null>(null);
   const [isConfirmRetireAllOpen, setIsConfirmRetireAllOpen] = useState(false);
 
@@ -41,17 +43,26 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
   };
   
   const handleRetireOnu = (onuToRetire: OnuData) => {
+    if (!profile) return;
+    
     const userDocRef = doc(firestore, 'users', userId);
     const onuDocRef = doc(firestore, 'onus', onuToRetire.id);
     const removedDate = new Date().toISOString();
     
     const batch = writeBatch(firestore);
 
+    const historyEntry: OnuHistoryEntry = {
+      action: 'removed',
+      date: removedDate,
+      userId: profile.id,
+      userName: profile.name,
+    };
+
     // Update ONU status
     batch.update(onuDocRef, {
       status: 'removed',
       removedDate: removedDate,
-      history: [...(onuToRetire.history || []), { action: 'removed', date: removedDate }]
+      history: [...(onuToRetire.history || []), historyEntry]
     });
 
     // Remove from search list
@@ -63,9 +74,17 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
   };
 
   const handleRetireAll = () => {
+    if (!profile) return;
     const date = new Date().toISOString();
     const batch = writeBatch(firestore);
     const userDocRef = doc(firestore, 'users', userId);
+
+    const historyEntry: Omit<OnuHistoryEntry, 'source'> = {
+      action: 'removed',
+      date,
+      userId: profile.id,
+      userName: profile.name,
+    };
 
     searchListOnus.forEach(onuInSearch => {
       if (onuInSearch.status === 'active') {
@@ -73,7 +92,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
         batch.update(onuDocRef, {
           status: 'removed',
           removedDate: date,
-          history: [...(onuInSearch.history || []), { action: 'removed', date }]
+          history: [...(onuInSearch.history || []), historyEntry]
         });
       }
     });
@@ -108,7 +127,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
           </p>
         </div>
         {searchListOnus.length > 0 && (
-            <Button onClick={() => setIsConfirmRetireAllOpen(true)}>
+            <Button onClick={() => setIsConfirmRetireAllOpen(true)} disabled={!profile?.isAdmin}>
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Marcar todas como encontradas
             </Button>
@@ -168,7 +187,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
                     size="sm"
                     className="w-full"
                     onClick={() => setOnuToRetire(onu)}
-                    disabled={onu.status === 'removed'}
+                    disabled={onu.status === 'removed' || !profile?.isAdmin}
                   >
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Encontrada
@@ -226,5 +245,3 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
     </section>
   );
 }
-
-    
