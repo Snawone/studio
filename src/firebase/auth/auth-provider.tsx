@@ -62,13 +62,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/app')) {
             router.push('/app');
           }
-        } else {
-          // User exists in Auth, but not in Firestore. This is an invalid state.
-          // Log them out and send to login page to prevent being stuck.
-          console.error("User profile not found in Firestore. Logging out.");
-          signOut(auth);
-          setProfile(null);
         }
+        // If the doc doesn't exist, we wait. It might be in the process of being created.
+        // The main page's loading state will handle showing a spinner.
         setAuthLoading(false);
       }, (error) => {
           console.error("Error fetching user profile:", error);
