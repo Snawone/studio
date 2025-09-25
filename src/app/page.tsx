@@ -41,11 +41,11 @@ export default function Home() {
     const active = allOnus.filter(onu => onu.status === 'active');
     const removed = allOnus.filter(onu => onu.status === 'removed');
     const search = allOnus.filter(onu => onu.inSearch);
-    const shelves = Array.from(new Set(active.map(onu => onu.Shelf))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const shelves = Array.from(new Set(active.map(onu => onu.shelfLocation))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
     return { activeOnus: active, removedOnus: removed, searchList: search, allShelves: shelves };
   }, [allOnus]);
 
-  if (isUserLoading || (user && isOnusLoading)) {
+  if (isUserLoading || !user || isOnusLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -62,14 +62,14 @@ export default function Home() {
                   activeView="activas" 
                   onus={activeOnus} 
                   allShelves={allShelves}
-                  userId={user!.uid}
+                  userId={user.uid}
                 />;
       case 'retiradas':
         return <OnuFinder 
                   activeView="retiradas" 
                   onus={removedOnus} 
                   allShelves={allShelves}
-                  userId={user!.uid}
+                  userId={user.uid}
                 />;
       case 'opciones':
         return <OptionsPage />;
@@ -78,14 +78,14 @@ export default function Home() {
       case 'en-busqueda':
         return <SearchListPage 
                   searchList={searchList}
-                  userId={user!.uid}
+                  userId={user.uid}
                 />;
       default:
         return <OnuFinder 
                   activeView="activas" 
                   onus={activeOnus} 
                   allShelves={allShelves}
-                  userId={user!.uid}
+                  userId={user.uid}
                 />;
     }
   }
