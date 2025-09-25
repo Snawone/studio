@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "Onu": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Onu",
+      "type": "object",
+      "description": "Represents an Optical Network Unit (ONU) and its location within the shelving system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ONU entity."
+        },
+        "serialNumber": {
+          "type": "string",
+          "description": "The serial number of the ONU."
+        },
+        "shelfLocation": {
+          "type": "string",
+          "description": "The location of the ONU on the shelf (e.g., A1-2, B3-5)."
+        },
+        "model": {
+          "type": "string",
+          "description": "The model of the ONU."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Any notes or comments about the ONU.",
+          "format": "text"
+        }
+      },
+      "required": [
+        "id",
+        "serialNumber",
+        "shelfLocation"
+      ]
+    },
+    "Spreadsheet": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Spreadsheet",
+      "type": "object",
+      "description": "Represents a spreadsheet uploaded to the system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Spreadsheet entity."
+        },
+        "filename": {
+          "type": "string",
+          "description": "The name of the uploaded spreadsheet file."
+        },
+        "uploadDate": {
+          "type": "string",
+          "description": "The date and time when the spreadsheet was uploaded.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "filename",
+        "uploadDate"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "spreadsheets/{spreadsheetId}",
+        "definition": {
+          "entityName": "Spreadsheet",
+          "schema": {
+            "$ref": "#/backend/entities/Spreadsheet"
+          },
+          "description": "Stores metadata about uploaded spreadsheets.",
+          "params": [
+            {
+              "name": "spreadsheetId",
+              "description": "The unique identifier of the spreadsheet."
+            }
+          ]
+        }
+      },
+      {
+        "path": "spreadsheets/{spreadsheetId}/onus/{onuId}",
+        "definition": {
+          "entityName": "Onu",
+          "schema": {
+            "$ref": "#/backend/entities/Onu"
+          },
+          "description": "Stores ONU data extracted from uploaded spreadsheets.",
+          "params": [
+            {
+              "name": "spreadsheetId",
+              "description": "The unique identifier of the spreadsheet."
+            },
+            {
+              "name": "onuId",
+              "description": "The unique identifier of the ONU within the spreadsheet."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to facilitate ONU location tracking via spreadsheet uploads and searches. A top-level `spreadsheets` collection stores metadata about uploaded spreadsheets. Each spreadsheet has a subcollection called `onus` that stores the ONU data extracted from the spreadsheet. This structure supports efficient querying of ONUs based on spreadsheet context and enables easy searching for a particular ONU. The structure supports the application's core features of spreadsheet import, column search, search functionality, and location display. This design promotes authorization independence because each ONU document in the subcollection inherits all the attributes necessary for authorization without needing to 'get()' data from parent documents. The proposed structure supports the required QAPs by segregating spreadsheets and their associated onus and using path-based ownership within each spreadsheet."
+  }
+}

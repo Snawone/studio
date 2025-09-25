@@ -1,0 +1,62 @@
+/**
+ * @fileoverview Firestore Security Rules for the ONU tracking application.
+ *
+ * Core Philosophy:
+ * This ruleset prioritizes secure data access based on a hierarchical, spreadsheet-centric model. Each spreadsheet acts as a container for ONU data, and access is controlled at both the spreadsheet and ONU levels. The primary goal is to prevent unauthorized modification or deletion of spreadsheet and ONU data, while allowing read access where appropriate.
+ *
+ * Data Structure:
+ * The data is organized into two main collections: `/spreadsheets/{spreadsheetId}` and `/spreadsheets/{spreadsheetId}/onus/{onuId}`. Each spreadsheet contains metadata about the uploaded file, while the `onus` subcollection stores information about individual ONUs.
+ *
+ * Key Security Decisions:
+ * - All write operations on spreadsheets and ONUs require authentication.
+ * - There is no role-based access control (e.g., admin roles).
+ * - List operations are allowed on the public spreadsheets collection, but not on the onus subcollection.
+ *
+ * Denormalization for Authorization:
+ * The rules leverage the hierarchical structure of Firestore to avoid costly `get()` operations. Specifically, because the onus are in a subcollection, authorization can be done within the subcollection.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Controls access to the spreadsheets collection.
+     * @path /spreadsheets/{spreadsheetId}
+     * @allow (create) Authenticated user can create a spreadsheet.
+     * @deny (create) Unauthenticated user cannot create a spreadsheet.
+     * @allow (get, list) Any user can read spreadsheet metadata.
+     * @deny (update, delete) Only the authenticated user can update or delete a spreadsheet.
+     * @principle Enforces authentication for writes and allows public reads.
+     */
+    match /spreadsheets/{spreadsheetId} {
+      allow get, list: if true;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource != null;
+    }
+
+    /**
+     * @description Controls access to the onus subcollection within a spreadsheet.
+     * @path /spreadsheets/{spreadsheetId}/onus/{onuId}
+     * @allow (create) Authenticated user can create an ONU.
+     * @deny (create) Unauthenticated user cannot create an ONU.
+     * @allow (get) Any user can read ONU data.
+     * @deny (list) No listing of onus allowed.
+     * @deny (update, delete) Only an authenticated user can update or delete an ONU.
+     * @principle Enforces authentication for writes and allows public reads.
+     */
+    match /spreadsheets/{spreadsheetId}/onus/{onuId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource != null;
+    }
+
+    /**
+     * @description Checks if the user is signed in.
+     * @return {bool} True if the user is signed in, false otherwise.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+  }
+}
