@@ -538,9 +538,7 @@ const SidebarMenuButton = React.forwardRef<
   React.ComponentProps<"button"> & {
     asChild?: boolean
     isActive?: boolean
-    tooltip?: Omit<React.ComponentProps<typeof TooltipContent>, "children"> & {
-      children: React.ReactNode
-    }
+    tooltip?: string
   } & VariantProps<typeof sidebarMenuButtonVariants>
 >(
   (
@@ -573,8 +571,6 @@ const SidebarMenuButton = React.forwardRef<
       return button
     }
 
-    const { children: tooltipContent, ...tooltipProps } = tooltip
-
     return (
       <Tooltip>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
@@ -582,9 +578,8 @@ const SidebarMenuButton = React.forwardRef<
           side="right"
           align="center"
           hidden={state !== "collapsed" || isMobile}
-          {...tooltipProps}
         >
-          {tooltipContent}
+          {tooltip}
         </TooltipContent>
       </Tooltip>
     )
