@@ -20,7 +20,8 @@ import {
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from '@/firebase';
-import { writeBatch, doc, updateDoc } from 'firebase/firestore';
+import { writeBatch, doc } from 'firebase/firestore';
+import { updateDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 type SearchListPageProps = {
   searchListOnus: OnuData[];
@@ -36,7 +37,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
   const handleRemoveFromSearchList = (onuId: string) => {
     const userDocRef = doc(firestore, 'users', userId);
     const newSearchList = searchListIds.filter(id => id !== onuId);
-    updateDoc(userDocRef, { searchList: newSearchList });
+    updateDocumentNonBlocking(userDocRef, { searchList: newSearchList });
   };
   
   const handleRetireOnu = (onuToRetire: OnuData) => {
@@ -225,3 +226,5 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
     </section>
   );
 }
+
+    

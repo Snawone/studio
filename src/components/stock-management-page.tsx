@@ -16,6 +16,7 @@ import { addDoc, collection, doc, runTransaction } from 'firebase/firestore';
 import { PackagePlus, Loader2, Warehouse, PlusCircle, Server, AlertTriangle } from 'lucide-react';
 import { type Shelf, type OnuData } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { addDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 const shelfSchema = z.object({
   name: z.string().min(1, "El nombre es requerido."),
@@ -52,20 +53,25 @@ export function StockManagementPage() {
 
   const handleCreateShelf = async (values: ShelfFormValues) => {
     setIsCreatingShelf(true);
-    try {
-      await addDoc(collection(firestore, 'shelves'), {
+    const newShelfData = {
         ...values,
         itemCount: 0,
         createdAt: new Date().toISOString(),
+    };
+    
+    addDocumentNonBlocking(collection(firestore, 'shelves'), newShelfData)
+      .then(() => {
+        toast({ title: "Estante creado", description: `El estante "${values.name}" ha sido creado.` });
+        shelfForm.reset();
+      })
+      .catch((error) => {
+        // The permission error is already being emitted globally by the non-blocking function
+        console.error("Error creating shelf: ", error);
+        toast({ variant: "destructive", title: "Error", description: "No se pudo crear el estante. Revisa los permisos." });
+      })
+      .finally(() => {
+          setIsCreatingShelf(false);
       });
-      toast({ title: "Estante creado", description: `El estante "${values.name}" ha sido creado.` });
-      shelfForm.reset();
-    } catch (error) {
-      console.error("Error creating shelf: ", error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudo crear el estante." });
-    } finally {
-      setIsCreatingShelf(false);
-    }
   };
 
   const handleAddDevice = async (values: DeviceFormValues) => {
@@ -269,3 +275,5 @@ export function StockManagementPage() {
     </section>
   );
 }
+
+    
