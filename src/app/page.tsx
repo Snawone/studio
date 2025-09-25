@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
@@ -12,10 +12,19 @@ import { type OnuData } from '@/lib/data';
 
 export default function Home() {
   const [activeView, setActiveView] = useState<'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda'>('activas');
+  
+  const [data, setData] = useState<OnuData[]>([]);
+  const [removedOnus, setRemovedOnus] = useState<OnuData[]>([]);
+  const [searchList, setSearchList] = useState<OnuData[]>([]);
   const [allOnus, setAllOnus] = useState<OnuData[]>([]);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
-  const handleDataChange = (data: OnuData[], removed: OnuData[]) => {
-    const combined = [...data, ...removed];
+
+  const handleDataChange = (newData: OnuData[], newRemoved: OnuData[], newSearch: OnuData[]) => {
+    setData(newData);
+    setRemovedOnus(newRemoved);
+    setSearchList(newSearch);
+    const combined = [...newData, ...newRemoved];
     const uniqueOnus = Array.from(new Map(combined.map(onu => [onu['ONU ID'], onu])).values());
     setAllOnus(uniqueOnus);
   };
@@ -24,15 +33,34 @@ export default function Home() {
     switch (activeView) {
       case 'activas':
       case 'retiradas':
-        return <OnuFinder activeView={activeView} onDataChange={handleDataChange} />;
+        return <OnuFinder 
+          activeView={activeView} 
+          onDataChange={handleDataChange}
+          initialData={data}
+          initialRemovedOnus={removedOnus}
+          initialSearchList={searchList}
+          onDataLoaded={setIsDataLoaded}
+        />;
       case 'opciones':
         return <OptionsPage />;
       case 'historial':
         return <HistoryPage allOnus={allOnus} />;
       case 'en-busqueda':
-        return <SearchListPage />;
+        return <SearchListPage 
+                  searchList={searchList}
+                  onDataChange={handleDataChange}
+                  allActiveOnus={data}
+                  allRemovedOnus={removedOnus}
+                />;
       default:
-        return <OnuFinder activeView="activas" onDataChange={handleDataChange} />;
+        return <OnuFinder 
+                  activeView="activas" 
+                  onDataChange={handleDataChange} 
+                  initialData={data}
+                  initialRemovedOnus={removedOnus}
+                  initialSearchList={searchList}
+                  onDataLoaded={setIsDataLoaded}
+                />;
     }
   }
 
