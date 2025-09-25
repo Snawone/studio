@@ -95,7 +95,9 @@ export function OnuFinder() {
       try {
         localStorage.setItem('onuData', JSON.stringify(data));
         localStorage.setItem('onuRemovedData', JSON.stringify(removedOnus));
-        localStorage.setItem('onuFileName', fileName || '');
+        if (fileName) {
+          localStorage.setItem('onuFileName', fileName);
+        }
       } catch (e) {
         console.error("Failed to save data to localStorage", e);
       }
@@ -233,13 +235,6 @@ export function OnuFinder() {
     );
   }, [searchTerm, data]);
   
-  const filteredRemovedResults = useMemo(() => {
-    if (!searchTerm) return removedOnus;
-    return removedOnus.filter((row) => 
-        row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [searchTerm, removedOnus]);
-
   const shelves = useMemo(() => {
     const shelfMap: Record<string, OnuData[]> = {};
     filteredResults.forEach(onu => {
@@ -307,40 +302,6 @@ export function OnuFinder() {
     </Card>
   );
 
- const renderRemovedOnuCard = (row: OnuData, index: number) => (
-    <Card key={`removed-${row.Shelf}-${row['ONU ID']}-${index}`} className="bg-muted/50 flex flex-col justify-between">
-      <div>
-        <CardHeader>
-          <CardTitle className="flex items-center text-base text-muted-foreground break-all">
-            <Tag className="mr-2 h-4 w-4 flex-shrink-0"/>
-            {row['ONU ID']}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="flex items-center text-sm font-medium">
-            <Server className="mr-2 h-4 w-4 text-muted-foreground/70" />
-            <span className="text-muted-foreground/70 mr-2">Estante:</span> 
-            <span className="font-bold text-muted-foreground">{row.Shelf}</span>
-          </p>
-        </CardContent>
-      </div>
-      <CardFooter className="p-4">
-        <Button 
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => {
-            setOnuToManage(row);
-            setIsConfirmRestoreOpen(true);
-          }}
-        >
-          <RotateCcw className="mr-2 h-4 w-4" />
-          Devolver
-        </Button>
-      </CardFooter>
-    </Card>
- );
-
   const renderShelfAccordion = () => (
     <div className="space-y-4">
         {shelves.length > 0 ? (
@@ -368,25 +329,6 @@ export function OnuFinder() {
                   {searchTerm 
                     ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
                     : "No hay ONUs activas para mostrar."
-                  }
-                </p>
-            </div>
-        )}
-    </div>
-  );
-
-  const renderRemovedList = () => (
-    <div className="space-y-4">
-        {filteredRemovedResults.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredRemovedResults.map(renderRemovedOnuCard)}
-            </div>
-        ) : (
-            <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                <p className="text-muted-foreground">
-                  {searchTerm 
-                    ? <>No se encontraron ONUs retiradas para <strong className="text-foreground">"{searchTerm}"</strong>.</>
-                    : "No hay ONUs marcadas como retiradas."
                   }
                 </p>
             </div>
@@ -477,7 +419,7 @@ export function OnuFinder() {
         <>
          <div className="space-y-4">
             <div className="flex justify-between items-center gap-4 flex-wrap">
-                <h2 className="text-2xl font-headline font-semibold">Inventario de ONUs</h2>
+                <h2 className="text-2xl font-headline font-semibold">Inventario de ONUs Activas ({data.length})</h2>
                 <div className="flex gap-2">
                     <Dialog open={isAddOnuOpen} onOpenChange={setIsAddOnuOpen}>
                         <DialogTrigger asChild>
@@ -528,7 +470,7 @@ export function OnuFinder() {
          <Card>
             <CardHeader>
                 <CardTitle>Búsqueda Rápida de ONU</CardTitle>
-                <CardDescription>Encuentra una ONU específica buscando por su ID en todas las pestañas.</CardDescription>
+                <CardDescription>Encuentra una ONU específica buscando por su ID.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="max-w-xl">
@@ -538,7 +480,7 @@ export function OnuFinder() {
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${data.length + removedOnus.length} ONUs...`}
+                    placeholder={`Buscar entre ${data.length} ONUs activas...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -552,36 +494,15 @@ export function OnuFinder() {
             </CardContent>
          </Card>
           
-          <Tabs defaultValue="active">
-            <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="active">
-                    Activas <Badge variant={searchTerm ? "secondary" : "default"} className="ml-2">{filteredResults.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="removed">
-                    Retiradas <Badge variant="secondary" className="ml-2">{filteredRemovedResults.length}</Badge>
-                </TabsTrigger>
-            </TabsList>
-            <TabsContent value="active" className="mt-6">
-                {isPending ? (
-                  <div className="space-y-4">
-                      {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
-                  </div>
-                ) : (
-                  renderShelfAccordion()
-                )}
-            </TabsContent>
-            <TabsContent value="removed" className="mt-6">
-                {isPending ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {[...Array(8)].map((_, i) => (
-                          <Card key={i}><CardHeader><Skeleton className="h-6 w-3/4" /></CardHeader><CardContent><Skeleton className="h-4 w-1/2" /></CardContent></Card>
-                        ))}
-                    </div>
-                ) : (
-                  renderRemovedList()
-                )}
-            </TabsContent>
-          </Tabs>
+          <div className="mt-6">
+            {isPending ? (
+              <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
+              </div>
+            ) : (
+              renderShelfAccordion()
+            )}
+          </div>
         </>
       )}
 
@@ -623,5 +544,3 @@ export function OnuFinder() {
     </section>
   );
 }
-
-    
