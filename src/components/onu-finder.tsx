@@ -14,30 +14,21 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { FileSpreadsheet, Search, Upload, Package, Rows, Tag, Server, Link, AlertTriangle } from "lucide-react";
+import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
 export function OnuFinder() {
   const [data, setData] = useState<OnuData[]>([]);
-  const [headers, setHeaders] = useState<string[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [searchColumn, setSearchColumn] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState("");
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,27 +44,41 @@ export function OnuFinder() {
         const workbook = XLSX.read(fileContent, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json<OnuData>(worksheet);
+        
+        // Use header: 1 to get array of arrays
+        const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-        if (jsonData.length === 0) {
+        if (sheetData.length < 2) {
           throw new Error("La hoja de cálculo está vacía o no tiene el formato correcto.");
         }
-        
-        setData(jsonData);
-        const firstRow = jsonData[0];
 
-        if (typeof firstRow !== 'object' || firstRow === null || Object.keys(firstRow).length === 0) {
-            throw new Error("El formato de los datos no es válido. La primera fila está vacía o corrupta.");
+        const headers = sheetData[0].filter(h => h); // Shelf names
+        const newOnuData: OnuData[] = [];
+
+        for (let i = 1; i < sheetData.length; i++) {
+          const row = sheetData[i];
+          for (let j = 0; j < headers.length; j++) {
+            const shelf = headers[j];
+            const onuId = row[j];
+            if (onuId) {
+              newOnuData.push({
+                'Shelf': String(shelf),
+                'ONU ID': String(onuId),
+              });
+            }
+          }
         }
 
-        const newHeaders = Object.keys(firstRow);
-        setHeaders(newHeaders);
-        setSearchColumn(newHeaders.find(h => h.toLowerCase().includes('id')) || newHeaders[0]);
+        if (newOnuData.length === 0) {
+            throw new Error("No se encontraron datos de ONU en el archivo.");
+        }
+        
+        setData(newOnuData);
         setFileName(file.name);
         setIsDataLoaded(true);
         setError(null);
       } catch (err: any) {
-        setError(err.message || 'Error al procesar el archivo. Asegúrate que sea un archivo Excel o CSV válido.');
+        setError(err.message || 'Error al procesar el archivo. Asegúrate que sea un archivo Excel válido con el formato correcto.');
       } finally {
         setIsLoading(false);
       }
@@ -118,17 +123,16 @@ export function OnuFinder() {
 
   const filteredResults = useMemo(() => {
     if (!searchTerm) return [];
-    if (!searchColumn) return [];
-
-    return data.filter((row) => {
-        const value = row[searchColumn as keyof OnuData];
-        return value?.toString().toLowerCase().includes(searchTerm.toLowerCase());
-    });
-  }, [searchTerm, searchColumn, data]);
+    return data.filter((row) => 
+        row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [searchTerm, data]);
 
   const shelves = useMemo(() => {
     const shelfMap: Record<string, OnuData[]> = {};
-    data.forEach(onu => {
+    const dataToProcess = searchTerm ? filteredResults : data;
+
+    dataToProcess.forEach(onu => {
         const shelf = onu.Shelf || 'Sin Estante';
         if (!shelfMap[shelf]) {
             shelfMap[shelf] = [];
@@ -136,34 +140,15 @@ export function OnuFinder() {
         shelfMap[shelf].push(onu);
     });
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB));
-  }, [data]);
+  }, [data, searchTerm, filteredResults]);
 
-  const getStatusVariant = (status: OnuData['Status']) => {
-    if (!status) return 'outline';
-    const lowerStatus = status.toLowerCase();
-    if (lowerStatus === 'active') return 'default';
-    if (lowerStatus === 'inactive') return 'secondary';
-    if (lowerStatus === 'maintenance') return 'destructive';
-    return 'outline';
-  };
-  
-  const getIconForHeader = (header: string) => {
-    const lowerHeader = header.toLowerCase();
-    if(lowerHeader.includes('id')) return <Tag className="mr-2 h-4 w-4 text-muted-foreground" />;
-    if(lowerHeader.includes('model')) return <Package className="mr-2 h-4 w-4 text-muted-foreground" />;
-    if(lowerHeader.includes('shelf')) return <Server className="mr-2 h-4 w-4 text-muted-foreground" />;
-    if(lowerHeader.includes('rack')) return <Rows className="mr-2 h-4 w-4 text-muted-foreground" />;
-    return null;
-  }
 
   const resetState = () => {
     setData([]);
-    setHeaders([]);
     setFileName(null);
     setIsDataLoaded(false);
     setError(null);
     setSearchTerm('');
-    setSearchColumn('');
     setUrl('');
     if(fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -171,40 +156,69 @@ export function OnuFinder() {
   };
 
   const renderOnuCard = (row: OnuData, index: number) => (
-    <Card key={index}>
+    <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`}>
       <CardHeader>
-        <CardTitle className="flex items-center text-primary">
-          <Tag className="mr-2 h-5 w-5"/>
+        <CardTitle className="flex items-center text-base text-primary break-all">
+          <Tag className="mr-2 h-4 w-4 flex-shrink-0"/>
           {row['ONU ID']}
         </CardTitle>
-        <CardDescription className="flex items-center">
-          <Package className="mr-2 h-4 w-4"/>
-          {row.Model}
-        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-2 text-sm font-medium">
-        <p className="flex items-center">
+      <CardContent>
+        <p className="flex items-center text-sm font-medium">
           <Server className="mr-2 h-4 w-4 text-muted-foreground" />
           <span className="text-muted-foreground mr-2">Estante:</span> 
           <span className="font-bold text-foreground">{row.Shelf}</span>
         </p>
-        <p className="flex items-center">
-          <Rows className="mr-2 h-4 w-4 text-muted-foreground" />
-           <span className="text-muted-foreground mr-2">Rack:</span>
-           <span className="font-bold text-foreground">{row.Rack}</span>
-        </p>
       </CardContent>
-      <CardFooter>
-         <Badge variant={getStatusVariant(row.Status)}>{row.Status || 'N/A'}</Badge>
-      </CardFooter>
     </Card>
+  );
+
+  const renderShelfAccordion = () => (
+    <div className="space-y-4">
+        <h3 className="text-xl font-headline font-semibold">
+          {searchTerm ? `Resultados en Estantes (${filteredResults.length})` : 'Equipos por Estante'}
+        </h3>
+        {isLoading ? (
+             <div className="space-y-4">
+                {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
+            </div>
+        ) : shelves.length > 0 ? (
+            <Accordion type="single" collapsible className="w-full" defaultValue={shelves.length > 0 ? shelves[0][0] : undefined}>
+                {shelves.map(([shelf, onus]) => (
+                    <AccordionItem value={shelf} key={shelf}>
+                        <AccordionTrigger>
+                            <div className="flex items-center gap-3">
+                                <Server className="h-5 w-5 text-primary" />
+                                <span className="font-medium">{shelf}</span>
+                                <Badge variant="secondary">{onus.length} ONUs</Badge>
+                            </div>
+                        </AccordionTrigger>
+                        <AccordionContent>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+                                {onus.map(renderOnuCard)}
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                ))}
+            </Accordion>
+        ) : (
+            <div className="text-center py-16 border-2 border-dashed rounded-lg">
+                <p className="text-muted-foreground">
+                  {searchTerm 
+                    ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
+                    : "No hay datos de estantes para mostrar."
+                  }
+                </p>
+            </div>
+        )}
+    </div>
   );
 
 
   return (
-    <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
+    <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
       {!isDataLoaded ? (
-        <Card className="text-center">
+        <Card className="text-center max-w-xl mx-auto">
           <CardHeader>
             <div className="mx-auto bg-secondary p-3 rounded-full w-fit">
               <Upload className="h-8 w-8 text-primary" />
@@ -273,8 +287,8 @@ export function OnuFinder() {
       ) : (
         <>
          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-headline font-semibold">Inventario de Equipos</h2>
+            <div className="flex justify-between items-center gap-4">
+                <h2 className="text-2xl font-headline font-semibold">Inventario de ONUs</h2>
                 <Button variant="outline" size="sm" onClick={resetState}>
                     Cargar otro archivo
                 </Button>
@@ -284,111 +298,42 @@ export function OnuFinder() {
 
          <Card>
             <CardHeader>
-                <CardTitle>Búsqueda Rápida</CardTitle>
-                <CardDescription>Encuentra un equipo específico buscando por cualquiera de sus atributos.</CardDescription>
+                <CardTitle>Búsqueda Rápida de ONU</CardTitle>
+                <CardDescription>Encuentra una ONU específica buscando por su ID.</CardDescription>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="search-column">Buscar en Columna</Label>
-                        <Select value={searchColumn} onValueChange={setSearchColumn}>
-                        <SelectTrigger id="search-column" className="w-full">
-                            <SelectValue placeholder="Seleccionar columna" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {headers.map((header) => (
-                            <SelectItem key={header} value={header}>
-                                <div className="flex items-center">
-                                {getIconForHeader(header)}
-                                {header}
-                                </div>
-                            </SelectItem>
-                            ))}
-                        </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor="search-term">Término de Búsqueda</Label>
-                        <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                            id="search-term"
-                            type="text"
-                            placeholder={`Buscar en "${searchColumn}"...`}
-                            value={searchTerm}
-                            onChange={(e) => {
-                            startTransition(() => {
-                                setSearchTerm(e.target.value);
-                            });
-                            }}
-                            className="pl-10 w-full"
-                            disabled={!searchColumn}
-                        />
-                        </div>
-                    </div>
+              <div className="max-w-xl">
+                <Label htmlFor="search-term">ID de la ONU</Label>
+                <div className="relative mt-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                    id="search-term"
+                    type="text"
+                    placeholder={`Buscar entre ${data.length} ONUs...`}
+                    value={searchTerm}
+                    onChange={(e) => {
+                    startTransition(() => {
+                        setSearchTerm(e.target.value);
+                    });
+                    }}
+                    className="pl-10 w-full"
+                />
                 </div>
+              </div>
             </CardContent>
          </Card>
           
-        {searchTerm ? (
-            <div className="space-y-4">
-                <h3 className="text-xl font-headline font-semibold">Resultados de Búsqueda ({filteredResults.length})</h3>
-                {isPending ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[...Array(3)].map((_, i) => (
-                            <Card key={i}>
-                                <CardHeader><Skeleton className="h-6 w-3/4" /></CardHeader>
-                                <CardContent className="space-y-2">
-                                    <Skeleton className="h-4 w-1/2" />
-                                    <Skeleton className="h-4 w-1/3" />
-                                </CardContent>
-                                <CardFooter><Skeleton className="h-6 w-20" /></CardFooter>
-                            </Card>
-                        ))}
-                    </div>
-                ) : filteredResults.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in-50">
-                    {filteredResults.map(renderOnuCard)}
-                    </div>
-                ) : (
-                    <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                        <p className="text-muted-foreground">No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</p>
-                    </div>
-                )}
-            </div>
-        ) : (
-            <div className="space-y-4">
-                <h3 className="text-xl font-headline font-semibold">Equipos por Estante</h3>
-                {isLoading ? (
-                     <div className="space-y-4">
-                        {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
-                    </div>
-                ) : shelves.length > 0 ? (
-                    <Accordion type="single" collapsible className="w-full">
-                        {shelves.map(([shelf, onus]) => (
-                            <AccordionItem value={shelf} key={shelf}>
-                                <AccordionTrigger>
-                                    <div className="flex items-center gap-3">
-                                        <Server className="h-5 w-5 text-primary" />
-                                        <span className="font-medium">{shelf}</span>
-                                        <Badge variant="secondary">{onus.length} ONUs</Badge>
-                                    </div>
-                                </AccordionTrigger>
-                                <AccordionContent>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                                        {onus.map(renderOnuCard)}
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-                        ))}
-                    </Accordion>
-                ) : (
-                    <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                        <p className="text-muted-foreground">No hay datos de estantes para mostrar.</p>
-                    </div>
-                )}
-            </div>
-        )}
+          {isPending ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {[...Array(8)].map((_, i) => (
+                      <Card key={i}>
+                          <CardHeader><Skeleton className="h-6 w-3/4" /></CardHeader>
+                          <CardContent><Skeleton className="h-4 w-1/2" /></CardContent>
+                      </Card>
+                  ))}
+              </div>
+          ) : renderShelfAccordion()
+          }
         </>
       )}
     </section>
