@@ -537,7 +537,7 @@ export function OnuFinder({
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
-      {!isDataLoaded && profile?.isAdmin ? (
+      {onus.length === 0 && profile?.isAdmin ? (
         <Card className="text-center max-w-xl mx-auto">
           <CardHeader>
             <div className="mx-auto bg-secondary p-3 rounded-full w-fit">
