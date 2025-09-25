@@ -62,18 +62,15 @@ type OnuFinderProps = {
 export function OnuFinder({ 
   activeView, 
   onDataChange, 
-  initialData, 
-  initialRemovedOnus, 
-  initialSearchList,
+  initialData: data, 
+  initialRemovedOnus: removedOnus, 
+  initialSearchList: searchList,
   onDataLoaded
 }: OnuFinderProps) {
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
 
-  const [data, setData] = useState<OnuData[]>(initialData);
-  const [removedOnus, setRemovedOnus] = useState<OnuData[]>(initialRemovedOnus);
-  const [searchList, setSearchList] = useState<OnuData[]>(initialSearchList);
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDataLoadedInternal, setIsDataLoadedInternal] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -93,6 +90,10 @@ export function OnuFinder({
   const [isConfirmRetireOpen, setIsConfirmRetireOpen] = useState(false);
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
+  const setData = (newData: OnuData[]) => onDataChange(newData, removedOnus, searchList);
+  const setRemovedOnus = (newRemoved: OnuData[]) => onDataChange(data, newRemoved, searchList);
+  const setSearchList = (newSearch: OnuData[]) => onDataChange(data, removedOnus, newSearch);
+
   useEffect(() => {
     try {
       const savedFileName = localStorage.getItem('onuFileName');
@@ -100,9 +101,9 @@ export function OnuFinder({
         setIsLoading(true);
         const savedFileContent = localStorage.getItem('onuFileContent');
         if (savedFileContent) {
-          const workbook = XLSX.read(savedFileContent, { type: 'binary' });
-          setWorkbook(workbook);
-          const sheets = workbook.SheetNames;
+          const wb = XLSX.read(savedFileContent, { type: 'binary' });
+          setWorkbook(wb);
+          const sheets = wb.SheetNames;
           setSheetNames(sheets);
           setFileName(savedFileName);
           
@@ -112,15 +113,12 @@ export function OnuFinder({
           
           const savedData = localStorage.getItem(`onuData_${sheetToLoad}`);
           const parsedData = savedData ? JSON.parse(savedData) : [];
-          setData(parsedData);
-
+          
           const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${sheetToLoad}`);
           const parsedRemovedOnus = savedRemovedOnus ? JSON.parse(savedRemovedOnus) : [];
-          setRemovedOnus(parsedRemovedOnus);
           
           const savedSearchList = localStorage.getItem('onuSearchList');
           const parsedSearchList = savedSearchList ? JSON.parse(savedSearchList) : [];
-          setSearchList(parsedSearchList);
 
           onDataChange(parsedData, parsedRemovedOnus, parsedSearchList);
           setIsDataLoadedInternal(true);
@@ -138,23 +136,20 @@ export function OnuFinder({
 
   useEffect(() => {
     if (workbook && selectedSheet && !isHydrating) {
-      const savedData = localStorage.getItem(`onuData_${selectedSheet}`);
-      const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
+        const savedData = localStorage.getItem(`onuData_${selectedSheet}`);
+        const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
+  
+        const newData = savedData ? JSON.parse(savedData) : [];
+        const newRemoved = savedRemovedOnus ? JSON.parse(savedRemovedOnus) : [];
 
-      if (savedData) {
-        setData(JSON.parse(savedData));
-      } else {
-        parseSheetData(workbook, selectedSheet);
-      }
-
-      if (savedRemovedOnus) {
-        setRemovedOnus(JSON.parse(savedRemovedOnus));
-      } else {
-        setRemovedOnus([]);
-      }
-      localStorage.setItem('onuSelectedSheet', selectedSheet);
+        if (savedData) {
+            onDataChange(newData, newRemoved, searchList);
+        } else {
+            parseSheetData(workbook, selectedSheet);
+        }
+        localStorage.setItem('onuSelectedSheet', selectedSheet);
     }
-  }, [workbook, selectedSheet, isHydrating]);
+}, [workbook, selectedSheet, isHydrating]);
 
 
   useEffect(() => {
@@ -163,18 +158,11 @@ export function OnuFinder({
         localStorage.setItem(`onuData_${selectedSheet}`, JSON.stringify(data));
         localStorage.setItem(`onuRemovedData_${selectedSheet}`, JSON.stringify(removedOnus));
         localStorage.setItem('onuSearchList', JSON.stringify(searchList));
-        onDataChange(data, removedOnus, searchList);
       } catch (e) {
         console.error("Failed to save data to localStorage", e);
       }
     }
   }, [data, removedOnus, searchList, selectedSheet, isHydrating, isDataLoadedInternal]);
-
-  useEffect(() => {
-    setData(initialData);
-    setRemovedOnus(initialRemovedOnus);
-    setSearchList(initialSearchList);
-  }, [initialData, initialRemovedOnus, initialSearchList]);
 
   const parseSheetData = (wb: XLSX.WorkBook, sheetName: string) => {
     try {
@@ -182,7 +170,7 @@ export function OnuFinder({
         const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
 
         if (sheetData.length < 2) {
-            setData([]);
+            onDataChange([], removedOnus, searchList);
             return;
         }
         
@@ -210,10 +198,10 @@ export function OnuFinder({
             }
         }
         
-        setData(newOnuData);
+        onDataChange(newOnuData, [], []);
     } catch (err: any) {
         setError(err.message || `Error al procesar la hoja "${sheetName}".`);
-        setData([]);
+        onDataChange([], removedOnus, searchList);
     }
   };
 
@@ -229,7 +217,6 @@ export function OnuFinder({
         const firstSheet = sheets[0];
         setSelectedSheet(firstSheet);
         
-        // Clear previous data from local storage
         const allSheets = wb.SheetNames;
         allSheets.forEach(sheet => {
             localStorage.removeItem(`onuData_${sheet}`);
@@ -238,8 +225,6 @@ export function OnuFinder({
         localStorage.removeItem('onuSearchList');
         
         parseSheetData(wb, firstSheet);
-        setRemovedOnus([]);
-        setSearchList([]);
         
         setIsDataLoadedInternal(true);
         onDataLoaded(true);
@@ -319,8 +304,9 @@ export function OnuFinder({
             removedDate,
             history: [...(onuToManage.history || []), { action: 'removed', date: removedDate }]
         };
-        setData(prevData => prevData.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']));
-        setRemovedOnus(prevRemoved => [retiredOnu, ...prevRemoved]);
+        const newData = data.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']);
+        const newRemoved = [retiredOnu, ...removedOnus];
+        onDataChange(newData, newRemoved, searchList);
     }
     setIsConfirmRetireOpen(false);
     setOnuToManage(null);
@@ -334,8 +320,9 @@ export function OnuFinder({
         history: [...(onuToManage.history || []), { action: 'restored', date: restoredDate }]
       };
       delete restoredOnu.removedDate;
-      setRemovedOnus(prevRemoved => prevRemoved.filter(onu => onu['ONU ID'] !== restoredOnu['ONU ID']));
-      setData(prevData => [restoredOnu, ...prevData]);
+      const newRemoved = removedOnus.filter(onu => onu['ONU ID'] !== restoredOnu['ONU ID']);
+      const newData = [restoredOnu, ...data];
+      onDataChange(newData, newRemoved, searchList);
     }
     setIsConfirmRestoreOpen(false);
     setOnuToManage(null);
@@ -353,21 +340,22 @@ export function OnuFinder({
           addedDate: addedDate,
           history: [{ action: 'created', date: addedDate, source: 'manual'}]
       };
-      setData(prevData => [newOnu, ...prevData]);
+      const newData = [newOnu, ...data];
+      onDataChange(newData, removedOnus, searchList);
       setNewOnuId('');
       setNewOnuShelf('');
       setIsAddOnuOpen(false);
   };
 
   const handleToggleSearchList = (onu: OnuData) => {
-    setSearchList(prevList => {
-      const isInList = prevList.some(item => item['ONU ID'] === onu['ONU ID']);
-      if (isInList) {
-        return prevList.filter(item => item['ONU ID'] !== onu['ONU ID']);
-      } else {
-        return [onu, ...prevList];
-      }
-    });
+    const isInList = searchList.some(item => item['ONU ID'] === onu['ONU ID']);
+    let newSearchList;
+    if (isInList) {
+      newSearchList = searchList.filter(item => item['ONU ID'] !== onu['ONU ID']);
+    } else {
+      newSearchList = [onu, ...searchList];
+    }
+    onDataChange(data, removedOnus, newSearchList);
   };
 
   const filteredResults = useMemo(() => {
@@ -404,9 +392,7 @@ export function OnuFinder({
     setWorkbook(null);
     setSheetNames([]);
     setSelectedSheet('');
-    setData([]);
-    setRemovedOnus([]);
-    setSearchList([]);
+    onDataChange([], [], []);
     setFileName(null);
     setIsDataLoadedInternal(false);
     onDataLoaded(false);

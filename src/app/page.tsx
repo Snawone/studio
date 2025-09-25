@@ -19,7 +19,6 @@ export default function Home() {
   const [allOnus, setAllOnus] = useState<OnuData[]>([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
-
   const handleDataChange = (newData: OnuData[], newRemoved: OnuData[], newSearch: OnuData[]) => {
     setData(newData);
     setRemovedOnus(newRemoved);
