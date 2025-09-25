@@ -44,9 +44,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2 } from "lucide-react";
+import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2, Calendar as CalendarIcon, Trash2 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { SidebarTrigger } from "./ui/sidebar";
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 
 type OnuFinderProps = {
@@ -96,6 +98,9 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
           const sheetToLoad = savedSheet && sheets.includes(savedSheet) ? savedSheet : sheets[0];
           setSelectedSheet(sheetToLoad);
           
+          const savedData = localStorage.getItem(`onuData_${sheetToLoad}`);
+          setData(savedData ? JSON.parse(savedData) : []);
+
           const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${sheetToLoad}`);
           setRemovedOnus(savedRemovedOnus ? JSON.parse(savedRemovedOnus) : []);
 
@@ -112,13 +117,22 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
   }, []);
 
   useEffect(() => {
-    if (workbook && selectedSheet) {
-      parseSheetData(workbook, selectedSheet);
-      if (!isHydrating) {
-        localStorage.setItem('onuSelectedSheet', selectedSheet);
-        const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
-        setRemovedOnus(savedRemovedOnus ? JSON.parse(savedRemovedOnus) : []);
+    if (workbook && selectedSheet && !isHydrating) {
+      const savedData = localStorage.getItem(`onuData_${selectedSheet}`);
+      const savedRemovedOnus = localStorage.getItem(`onuRemovedData_${selectedSheet}`);
+
+      if (savedData) {
+        setData(JSON.parse(savedData));
+      } else {
+        parseSheetData(workbook, selectedSheet);
       }
+
+      if (savedRemovedOnus) {
+        setRemovedOnus(JSON.parse(savedRemovedOnus));
+      } else {
+        setRemovedOnus([]);
+      }
+      localStorage.setItem('onuSelectedSheet', selectedSheet);
     }
   }, [workbook, selectedSheet, isHydrating]);
 
@@ -126,12 +140,13 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
   useEffect(() => {
     if (!isHydrating && isDataLoaded) {
       try {
+        localStorage.setItem(`onuData_${selectedSheet}`, JSON.stringify(data));
         localStorage.setItem(`onuRemovedData_${selectedSheet}`, JSON.stringify(removedOnus));
       } catch (e) {
-        console.error("Failed to save removed ONUs to localStorage", e);
+        console.error("Failed to save data to localStorage", e);
       }
     }
-  }, [removedOnus, selectedSheet, isHydrating, isDataLoaded]);
+  }, [data, removedOnus, selectedSheet, isHydrating, isDataLoaded]);
 
   const parseSheetData = (wb: XLSX.WorkBook, sheetName: string) => {
     try {
@@ -145,6 +160,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
         
         const headers = sheetData[0].map(h => String(h || '').trim());
         const newOnuData: OnuData[] = [];
+        const currentDate = new Date().toISOString();
 
         for (let colIndex = 0; colIndex < headers.length; colIndex++) {
             const shelf = headers[colIndex];
@@ -157,6 +173,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
                             newOnuData.push({
                                 'Shelf': shelf,
                                 'ONU ID': String(onuId),
+                                addedDate: currentDate,
                             });
                         }
                     }
@@ -179,7 +196,10 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
         const sheets = wb.SheetNames;
         setSheetNames(sheets);
         setFileName(file.name);
-        setSelectedSheet(sheets[0]);
+        
+        const firstSheet = sheets[0];
+        setSelectedSheet(firstSheet);
+        parseSheetData(wb, firstSheet);
         setRemovedOnus([]);
         
         setIsDataLoaded(true);
@@ -192,7 +212,10 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
             localStorage.setItem('onuFileContent', binaryString);
         }
         localStorage.setItem('onuFileName', file.name);
-        localStorage.setItem('onuSelectedSheet', sheets[0]);
+        localStorage.setItem('onuSelectedSheet', firstSheet);
+        localStorage.removeItem(`onuData_${firstSheet}`);
+        localStorage.removeItem(`onuRemovedData_${firstSheet}`);
+
     } catch (err: any) {
         setError(err.message || 'Error al procesar el archivo. Asegúrate que sea un archivo Excel válido con el formato correcto.');
     } finally {
@@ -252,8 +275,9 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
 
   const handleConfirmRetire = () => {
     if (onuToManage) {
-        setData(prevData => prevData.filter(onu => onu['ONU ID'] !== onuToManage['ONU ID']));
-        setRemovedOnus(prevRemoved => [onuToManage, ...prevRemoved]);
+        const retiredOnu = { ...onuToManage, removedDate: new Date().toISOString() };
+        setData(prevData => prevData.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']));
+        setRemovedOnus(prevRemoved => [retiredOnu, ...prevRemoved]);
     }
     setIsConfirmRetireOpen(false);
     setOnuToManage(null);
@@ -261,8 +285,10 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
   
   const handleConfirmRestore = () => {
     if (onuToManage) {
-      setRemovedOnus(prevRemoved => prevRemoved.filter(onu => onu['ONU ID'] !== onuToManage['ONU ID']));
-      setData(prevData => [onuToManage, ...prevData]);
+      const restoredOnu = { ...onuToManage };
+      delete restoredOnu.removedDate;
+      setRemovedOnus(prevRemoved => prevRemoved.filter(onu => onu['ONU ID'] !== restoredOnu['ONU ID']));
+      setData(prevData => [restoredOnu, ...prevData]);
     }
     setIsConfirmRestoreOpen(false);
     setOnuToManage(null);
@@ -276,6 +302,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
       const newOnu: OnuData = {
           'ONU ID': newOnuId,
           'Shelf': newOnuShelf,
+          addedDate: new Date().toISOString(),
       };
       setData(prevData => [newOnu, ...prevData]);
       setNewOnuId('');
@@ -330,24 +357,48 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     localStorage.removeItem('onuFileContent');
     localStorage.removeItem('onuFileName');
     localStorage.removeItem('onuSelectedSheet');
-    sheetNames.forEach(sheet => localStorage.removeItem(`onuRemovedData_${sheet}`));
+    sheetNames.forEach(sheet => {
+        localStorage.removeItem(`onuData_${sheet}`);
+        localStorage.removeItem(`onuRemovedData_${sheet}`);
+    });
+  };
+  
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      return format(new Date(dateString), "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es });
+    } catch (e) {
+      return 'Fecha inválida';
+    }
   };
 
   const renderOnuCard = (row: OnuData, index: number, isRetired = false) => (
     <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className="group flex flex-col justify-between">
       <div>
-        <CardHeader>
+        <CardHeader className="pb-4">
           <CardTitle className="flex items-center text-base text-primary break-all">
             <Tag className="mr-2 h-4 w-4 flex-shrink-0"/>
             {row['ONU ID']}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="flex items-center text-sm font-medium">
+        <CardContent className="flex flex-col gap-2 text-sm">
+          <p className="flex items-center font-medium">
             <Server className="mr-2 h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground mr-2">Estante:</span> 
             <span className="font-bold text-foreground">{row.Shelf}</span>
           </p>
+          <p className="flex items-center font-medium">
+            <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground mr-2">Agregada:</span> 
+            <span className="text-foreground">{formatDate(row.addedDate)}</span>
+          </p>
+          {isRetired && row.removedDate && (
+             <p className="flex items-center font-medium text-destructive/80">
+                <Trash2 className="mr-2 h-4 w-4" />
+                <span className="mr-2">Retirada:</span> 
+                <span className="">{formatDate(row.removedDate)}</span>
+            </p>
+          )}
         </CardContent>
       </div>
       <CardFooter className="p-4">
@@ -532,7 +583,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
             <div className="flex justify-between items-start gap-4 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2">
-                        <SidebarTrigger className="md:hidden" />
+                        <SidebarTrigger />
                         <h2 className="text-2xl font-headline font-semibold">
                             {activeView === 'activas' ? `Inventario de ONUs Activas (${data.length})` : `ONUs Retiradas (${removedOnus.length})`}
                         </h2>
@@ -618,7 +669,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${filteredResults.length} ONUs...`}
+                    placeholder={`Buscar entre ${activeView === 'activas' ? data.length : removedOnus.length} ONUs...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -687,5 +738,3 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     </section>
   );
 }
-
-    
