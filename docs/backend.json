@@ -59,6 +59,14 @@
                 "enum": [
                   "manual"
                 ]
+              },
+              "userId": {
+                "type": "string",
+                "description": "The ID of the user who performed the action."
+              },
+              "userName": {
+                "type": "string",
+                "description": "The name of the user who performed the action."
               }
             }
           }

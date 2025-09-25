@@ -43,7 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Server, Tag, Loader2, Calendar as CalendarIcon, Trash2, RotateCcw, History, PackagePlus, Repeat, SearchCheck, Check } from "lucide-react";
+import { Search, Server, Tag, Loader2, Calendar as CalendarIcon, Trash2, RotateCcw, History, PackagePlus, Repeat, SearchCheck, Check, User } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -79,13 +79,19 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   const handleConfirmRetire = () => {
-    if (onuToManage) {
+    if (onuToManage && profile) {
         const removedDate = new Date().toISOString();
         const docRef = doc(firestore, 'onus', onuToManage.id);
+        const historyEntry: OnuHistoryEntry = { 
+          action: 'removed', 
+          date: removedDate,
+          userId: profile.id,
+          userName: profile.name,
+        };
         setDocumentNonBlocking(docRef, {
           status: 'removed',
           removedDate: removedDate,
-          history: [...(onuToManage.history || []), { action: 'removed', date: removedDate }]
+          history: [...(onuToManage.history || []), historyEntry]
         }, { merge: true });
     }
     setIsConfirmRetireOpen(false);
@@ -93,13 +99,19 @@ export function OnuFinder({
   };
   
   const handleConfirmRestore = () => {
-    if (onuToManage) {
+    if (onuToManage && profile) {
       const restoredDate = new Date().toISOString();
       const docRef = doc(firestore, 'onus', onuToManage.id);
+      const historyEntry: OnuHistoryEntry = {
+        action: 'restored',
+        date: restoredDate,
+        userId: profile.id,
+        userName: profile.name,
+      };
       updateDocumentNonBlocking(docRef, {
         status: 'active',
         removedDate: null,
-        history: [...(onuToManage.history || []), { action: 'restored', date: restoredDate }]
+        history: [...(onuToManage.history || []), historyEntry]
       });
     }
     setIsConfirmRestoreOpen(false);
@@ -160,14 +172,22 @@ export function OnuFinder({
   };
 
   const getHistoryMessage = (entry: OnuHistoryEntry) => {
-    switch (entry.action) {
-      case 'created': return `Creada manualmente`;
-      case 'added': return `Agregada al inventario`;
-      case 'removed': return `Retirada del inventario`;
-      case 'restored': return `Devuelta al inventario`;
-      default: return `Acción desconocida`;
+    const baseMessage = (() => {
+        switch (entry.action) {
+            case 'created': return `Creada manualmente`;
+            case 'added': return `Agregada al inventario`;
+            case 'removed': return `Retirada del inventario`;
+            case 'restored': return `Devuelta al inventario`;
+            default: return `Acción desconocida`;
+        }
+    })();
+
+    if (entry.userName) {
+        return `${baseMessage} por: ${entry.userName}`;
     }
-  }
+
+    return baseMessage;
+}
 
   const renderOnuCard = (row: OnuData, index: number) => {
     const isRetired = row.status === 'removed';
@@ -214,6 +234,9 @@ export function OnuFinder({
                                         <div>
                                             <p className="font-medium text-sm">{getHistoryMessage(entry)}</p>
                                             <p className="text-xs text-muted-foreground">{formatDate(entry.date)}</p>
+                                            {entry.userName && (
+                                                <p className="text-xs text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" />{entry.userName}</p>
+                                            )}
                                         </div>
                                     </li>
                                 ))}

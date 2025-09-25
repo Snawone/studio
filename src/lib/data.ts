@@ -4,6 +4,8 @@ export type OnuHistoryEntry = {
   action: OnuAction;
   date: string;
   source?: 'file' | 'manual';
+  userId?: string;
+  userName?: string;
 };
 
 export type OnuData = {

@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react';
 import { type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { History, PackagePlus, FileDown, Trash2, Repeat, Server, Tag, Search, Package } from "lucide-react";
+import { History, PackagePlus, FileDown, Trash2, Repeat, Server, Tag, Search, Package, User } from "lucide-react";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Input } from '@/components/ui/input';
@@ -54,13 +54,19 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
   };
 
   const getHistoryMessage = (entry: OnuHistoryEntry, onu: OnuData) => {
-    switch (entry.action) {
-      case 'created': return `Dispositivo creado manualmente en estante ${onu.shelfName}.`;
-      case 'added': return `Dispositivo agregado en estante ${onu.shelfName}.`;
-      case 'removed': return `Dispositivo retirado del inventario.`;
-      case 'restored': return `Dispositivo devuelto al estante ${onu.shelfName}.`;
-      default: return `Acción desconocida`;
+    const baseMessage = (() => {
+        switch (entry.action) {
+            case 'created': return `Dispositivo creado manualmente en estante ${onu.shelfName}.`;
+            case 'added': return `Dispositivo agregado en estante ${onu.shelfName}.`;
+            case 'removed': return `Dispositivo retirado del inventario.`;
+            case 'restored': return `Dispositivo devuelto al estante ${onu.shelfName}.`;
+            default: return `Acción desconocida`;
+        }
+    })();
+    if (entry.userName) {
+        return `${baseMessage} por: ${entry.userName}`;
     }
+    return baseMessage;
   };
 
   return (
@@ -130,6 +136,9 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
                          </div>
                         <p className="font-medium text-sm">{getHistoryMessage(entry, onu)}</p>
                         <p className="text-xs text-muted-foreground">{formatDate(entry.date)}</p>
+                        {entry.userName && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1"><User className="h-3 w-3" /> {entry.userName}</p>
+                        )}
                       </li>
                     ))}
                   </ul>
