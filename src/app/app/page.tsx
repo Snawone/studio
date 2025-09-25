@@ -27,18 +27,18 @@ export default function AppPage() {
   const fileInfoDocRef = useMemoFirebase(() => doc(firestore, 'settings', 'fileInfo'), [firestore]);
   const { data: fileInfo, isLoading: isFileInfoLoading } = useDoc<FileInfo>(fileInfoDocRef);
 
-  const { activeOnus, removedOnus, searchListOnus, allShelves } = useMemo(() => {
+  const { activeOnus, removedOnus, searchListOnus, allShelves, allOnusWithStatus } = useMemo(() => {
     if (!allOnus) {
-      return { activeOnus: [], removedOnus: [], searchListOnus: [], allShelves: [] };
+      return { activeOnus: [], removedOnus: [], searchListOnus: [], allShelves: [], allOnusWithStatus: [] };
     }
     const active = allOnus.filter(onu => onu.status === 'active');
     const removed = allOnus.filter(onu => onu.status === 'removed');
     const search = profile ? allOnus.filter(onu => profile.searchList.includes(onu.id)) : [];
     const shelves = Array.from(new Set(active.map(onu => onu.Shelf))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-    return { activeOnus: active, removedOnus: removed, searchListOnus: search, allShelves: shelves };
+    return { activeOnus: active, removedOnus: removed, searchListOnus: search, allShelves: shelves, allOnusWithStatus: allOnus };
   }, [allOnus, profile]);
 
-  if (isAuthLoading || !user || !profile || isOnusLoading || isFileInfoLoading) {
+  if (isAuthLoading || !user || !profile || isFileInfoLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -53,25 +53,27 @@ export default function AppPage() {
       case 'activas':
         return <OnuFinder 
                   activeView="activas" 
-                  onus={activeOnus} 
+                  onusFromFirestore={activeOnus} 
                   searchList={profile.searchList}
                   allShelves={allShelves}
                   userId={user.uid}
                   fileInfo={fileInfo}
+                  isLoadingOnus={isOnusLoading}
                 />;
       case 'retiradas':
         return <OnuFinder 
                   activeView="retiradas" 
-                  onus={removedOnus} 
+                  onusFromFirestore={removedOnus} 
                   searchList={profile.searchList}
                   allShelves={allShelves}
                   userId={user.uid}
                   fileInfo={fileInfo}
+                  isLoadingOnus={isOnusLoading}
                 />;
       case 'opciones':
         return <OptionsPage />;
       case 'historial':
-        return <HistoryPage allOnus={allOnus || []} />;
+        return <HistoryPage allOnus={allOnusWithStatus} />;
       case 'en-busqueda':
         return <SearchListPage 
                   searchListOnus={searchListOnus}
@@ -81,11 +83,12 @@ export default function AppPage() {
       default:
         return <OnuFinder 
                   activeView="activas" 
-                  onus={activeOnus} 
+                  onusFromFirestore={activeOnus} 
                   searchList={profile.searchList}
                   allShelves={allShelves}
                   userId={user.uid}
                   fileInfo={fileInfo}
+                  isLoadingOnus={isOnusLoading}
                 />;
     }
   }

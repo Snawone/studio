@@ -53,30 +53,37 @@ import { useFirestore } from "@/firebase";
 import { writeBatch, doc, updateDoc, setDoc } from "firebase/firestore";
 import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { useAuthContext } from "@/firebase/auth/auth-provider";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
-    onus: OnuData[];
+    onusFromFirestore: OnuData[];
     searchList: string[];
     allShelves: string[];
     userId: string;
     fileInfo: FileInfo | null;
+    isLoadingOnus: boolean;
+}
+
+type OnuFromSheet = {
+  'ONU ID': string;
+  'Shelf': string;
 }
 
 export function OnuFinder({ 
   activeView, 
-  onus,
+  onusFromFirestore,
   searchList,
   allShelves,
   userId,
-  fileInfo
+  fileInfo,
+  isLoadingOnus
 }: OnuFinderProps) {
   const firestore = useFirestore();
   const { profile } = useAuthContext();
+  const storage = getStorage();
   
-  const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
-  const [selectedSheet, setSelectedSheet] = useState<string>('');
-
+  const [onusFromSheet, setOnusFromSheet] = useState<OnuFromSheet[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +91,6 @@ export function OnuFinder({
   const [searchTerm, setSearchTerm] = useState("");
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [url, setUrl] = useState('');
 
   const [newOnuId, setNewOnuId] = useState('');
   const [newOnuShelf, setNewOnuShelf] = useState('');
@@ -96,134 +102,113 @@ export function OnuFinder({
 
   useEffect(() => {
     setIsHydrating(false);
-    if(fileInfo?.sheetNames && fileInfo.sheetNames.length > 0) {
-      setSelectedSheet(fileInfo.sheetNames[0]);
+  }, []);
+
+  const mergedOnus = useMemo(() => {
+    if (onusFromSheet.length === 0) {
+      // If the sheet hasn't been loaded, rely on Firestore data, especially for 'retiradas' view
+      return activeView === 'retiradas' ? onusFromFirestore : [];
+    }
+
+    const firestoreMap = new Map(onusFromFirestore.map(onu => [onu.id, onu]));
+    
+    const combined = onusFromSheet.map(sheetOnu => {
+      const firestoreData = firestoreMap.get(sheetOnu['ONU ID']);
+      return {
+        id: sheetOnu['ONU ID'],
+        'ONU ID': sheetOnu['ONU ID'],
+        'Shelf': sheetOnu['Shelf'],
+        status: firestoreData?.status || 'active', // Default to active if not in firestore
+        addedDate: firestoreData?.addedDate || new Date().toISOString(),
+        removedDate: firestoreData?.removedDate,
+        history: firestoreData?.history || [],
+      };
+    });
+
+    return combined.filter(onu => onu.status === (activeView === 'activas' ? 'active' : 'removed'));
+  }, [onusFromSheet, onusFromFirestore, activeView]);
+
+  useEffect(() => {
+    if (fileInfo && fileInfo.fileUrl) {
+      setIsLoading(true);
+      setError(null);
+      const fetchAndProcessFile = async () => {
+        try {
+          // Use a proxy to bypass CORS issues in development
+          const response = await fetch(fileInfo.fileUrl);
+          if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
+          const arrayBuffer = await response.arrayBuffer();
+          const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+          const sheetName = fileInfo.sheetName || workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+
+          if (jsonData.length < 2) {
+            setError('La hoja de cálculo está vacía o tiene un formato incorrecto.');
+            return;
+          }
+
+          const headers = jsonData[0].map(h => String(h || '').trim());
+          const allOnus: OnuFromSheet[] = [];
+
+          for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+              const shelf = headers[colIndex];
+              if (shelf) {
+                  for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
+                      const row = jsonData[rowIndex];
+                      if(row) {
+                          const onuId = row[colIndex];
+                          if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
+                              allOnus.push({
+                                  'ONU ID': String(onuId),
+                                  'Shelf': shelf,
+                              });
+                          }
+                      }
+                  }
+              }
+          }
+          setOnusFromSheet(allOnus);
+
+        } catch (err: any) {
+          console.error("Error fetching or processing file:", err);
+          setError(err.message || 'No se pudo obtener o procesar el archivo desde la URL.');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchAndProcessFile();
     }
   }, [fileInfo]);
 
-  const parseAndUploadSheetData = async (wb: XLSX.WorkBook, sheetName: string, fileName: string) => {
-    try {
-        setIsLoading(true);
-        const worksheet = wb.Sheets[sheetName];
-        const sheetData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-
-        if (sheetData.length < 2) {
-            setError('La hoja de cálculo está vacía o tiene un formato incorrecto.');
-            setIsLoading(false);
-            return;
-        }
-        
-        const headers = sheetData[0].map(h => String(h || '').trim());
-        const batch = writeBatch(firestore);
-        const fileProcessDate = new Date().toISOString();
-
-        for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-            const shelf = headers[colIndex];
-            if (shelf) {
-                for (let rowIndex = 1; rowIndex < sheetData.length; rowIndex++) {
-                    const row = sheetData[rowIndex];
-                    if(row) {
-                        const onuId = row[colIndex];
-                        if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
-                            const newOnu: OnuData = {
-                                id: String(onuId),
-                                'ONU ID': String(onuId),
-                                'Shelf': shelf,
-                                addedDate: fileProcessDate,
-                                history: [{ action: 'added', date: fileProcessDate, source: 'file' }],
-                                status: 'active',
-                            };
-                            const docRef = doc(firestore, 'onus', newOnu.id);
-                            batch.set(docRef, newOnu, { merge: true });
-                        }
-                    }
-                }
-            }
-        }
-        
-        const fileInfoRef = doc(firestore, 'settings', 'fileInfo');
-        const newFileInfo: FileInfo = {
-            fileName: fileName,
-            sheetNames: wb.SheetNames,
-            lastUpdated: fileProcessDate
-        };
-        batch.set(fileInfoRef, newFileInfo);
-        
-        await batch.commit();
-
-    } catch (err: any) {
-        setError(err.message || `Error al procesar la hoja "${sheetName}".`);
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-
-  const handleFile = (file: File, fileContent: string | ArrayBuffer) => {
-    try {
-        const wb = XLSX.read(fileContent, { type: 'binary' });
-        const sheets = wb.SheetNames;
-        const firstSheet = sheets[0];
-
-        setWorkbook(wb);
-        setSelectedSheet(firstSheet);
-        
-        parseAndUploadSheetData(wb, firstSheet, file.name);
-        setError(null);
-        
-    } catch (err: any) {
-        setError(err.message || 'Error al procesar el archivo. Asegúrate que sea un archivo Excel válido con el formato correcto.');
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-  const handleFileRead = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const fileContent = e.target?.result;
-        if (!fileContent) {
-            setError("No se pudo leer el archivo.");
-            setIsLoading(false);
-            return;
-        }
-        handleFile(file, fileContent);
-    };
-    reader.onerror = () => {
-        setError('Error al leer el archivo.');
-        setIsLoading(false);
-    };
-    reader.readAsBinaryString(file);
-  };
-
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setIsLoading(true);
-      setError(null);
-      handleFileRead(file);
-    }
-  };
-  
-  const handleUrlFetch = async () => {
-    if (!url) {
-      setError('Por favor, ingresa una URL válida.');
-      return;
-    }
+    if (!file) return;
+
     setIsLoading(true);
     setError(null);
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Error al obtener el archivo: ${response.statusText}`);
-      }
-      const blob = await response.blob();
-      const file = new File([blob], url.substring(url.lastIndexOf('/') + 1) || 'archivo_remoto.xlsx');
-      handleFileRead(file);
 
+    try {
+      // 1. Upload to Firebase Storage
+      const storageRef = ref(storage, `inventory/onus.xlsx`);
+      const uploadResult = await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(uploadResult.ref);
+
+      // 2. Save file info to Firestore
+      const fileInfoRef = doc(firestore, 'settings', 'fileInfo');
+      const newFileInfo: FileInfo = {
+          fileName: file.name,
+          fileUrl: downloadURL,
+          sheetName: '', // This could be set if you allow sheet selection
+          lastUpdated: new Date().toISOString(),
+      };
+      await setDoc(fileInfoRef, newFileInfo);
+      
+      // The useEffect will trigger a re-fetch and process automatically
     } catch (err: any) {
-      setError(err.message || 'No se pudo obtener o procesar el archivo desde la URL.');
+      console.error("Error during file upload process:", err);
+      setError(err.message || 'Error al subir o procesar el archivo.');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -232,11 +217,11 @@ export function OnuFinder({
     if (onuToManage) {
         const removedDate = new Date().toISOString();
         const docRef = doc(firestore, 'onus', onuToManage.id);
-        updateDocumentNonBlocking(docRef, {
+        setDocumentNonBlocking(docRef, {
           status: 'removed',
           removedDate: removedDate,
           history: [...(onuToManage.history || []), { action: 'removed', date: removedDate }]
-        });
+        }, { merge: true });
     }
     setIsConfirmRetireOpen(false);
     setOnuToManage(null);
@@ -262,6 +247,8 @@ export function OnuFinder({
           return;
       }
       const addedDate = new Date().toISOString();
+      // This only adds to Firestore, it won't appear in the main list until the Excel is updated.
+      // This is the desired behavior now.
       const newOnu: OnuData = {
           id: newOnuId,
           'ONU ID': newOnuId,
@@ -289,17 +276,16 @@ export function OnuFinder({
   };
 
   const filteredResults = useMemo(() => {
-    if (!searchTerm) return onus;
-    if (!onus) return [];
-    return onus.filter((row) => 
+    if (!searchTerm) return mergedOnus;
+    return mergedOnus.filter((row) => 
         row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, onus]);
+  }, [searchTerm, mergedOnus]);
   
   const shelves = useMemo(() => {
     const shelfMap: Record<string, OnuData[]> = {};
-    if (activeView === 'activas' && onus) {
-        onus.forEach(onu => {
+    if (activeView === 'activas') {
+        mergedOnus.forEach(onu => {
             const shelf = onu.Shelf || 'Sin Estante';
             if (!shelfMap[shelf]) {
                 shelfMap[shelf] = [];
@@ -308,7 +294,7 @@ export function OnuFinder({
         });
     }
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [onus, activeView]);
+  }, [mergedOnus, activeView]);
 
   
   const formatDate = (dateString: string | undefined) => {
@@ -549,14 +535,14 @@ export function OnuFinder({
             </div>
             <CardTitle className="font-headline mt-4">Importar Hoja de Cálculo</CardTitle>
             <CardDescription>
-              Sube tu archivo de Excel o CSV para empezar a buscar tus ONUs. Los datos se guardarán para todos los usuarios.
+              Sube tu archivo de Excel para empezar a buscar tus ONUs. El archivo se guardará en la nube y será usado por todos los usuarios.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {isLoading ? (
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Procesando y guardando archivo en la nube...</p>
+                <p className="text-sm text-muted-foreground">Subiendo archivo a la nube...</p>
               </div>
             ) : (
               <>
@@ -580,30 +566,6 @@ export function OnuFinder({
                         Subir Archivo
                     </Button>
                 </div>
-
-                <div className="flex items-center gap-4">
-                    <hr className="flex-grow border-t" />
-                    <span className="text-xs text-muted-foreground">O</span>
-                    <hr className="flex-grow border-t" />
-                </div>
-
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-full max-w-sm space-y-2 text-left">
-                       <Label htmlFor="url-input">Importar desde URL</Label>
-                       <div className="flex gap-2">
-                         <Input 
-                            id="url-input"
-                            type="url"
-                            placeholder="https://example.com/inventario.xlsx"
-                            value={url}
-                            onChange={(e) => setUrl(e.target.value)}
-                         />
-                         <Button onClick={handleUrlFetch} variant="secondary" disabled={isLoading}>
-                           <Link className="h-4 w-4" />
-                         </Button>
-                       </div>
-                    </div>
-                </div>
               </>
             )}
           </CardContent>
@@ -616,7 +578,7 @@ export function OnuFinder({
                     <div className="flex items-center gap-2">
                          
                         <h2 className="text-2xl font-headline font-semibold">
-                            {activeView === 'activas' ? `Inventario de ONUs Activas (${onus?.length || 0})` : `ONUs Retiradas (${onus?.length || 0})`}
+                            {activeView === 'activas' ? `Inventario de ONUs Activas (${mergedOnus.length})` : `ONUs Retiradas (${mergedOnus.length})`}
                         </h2>
                     </div>
                     <p className="text-muted-foreground text-sm mt-1">
@@ -635,6 +597,9 @@ export function OnuFinder({
                           <DialogContent>
                               <DialogHeader>
                                   <DialogTitle>Agregar Nueva ONU/STB</DialogTitle>
+                                  <DialogDescription>
+                                    Esta acción la agregará a Firestore, pero para que aparezca en la lista principal, debes actualizar y volver a subir el archivo de Excel.
+                                  </DialogDescription>
                               </DialogHeader>
                               <div className="grid gap-4 py-4">
                                   <div className="grid grid-cols-4 items-center gap-4">
@@ -663,32 +628,17 @@ export function OnuFinder({
                               </DialogFooter>
                           </DialogContent>
                       </Dialog>
+                      <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".xlsx, .xls, .csv" />
+                      <Button onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+                          <Upload className="mr-2 h-4 w-4" />
+                          {isLoading ? 'Subiendo...' : 'Actualizar Archivo'}
+                      </Button>
                   </div>
                 )}
             </div>
-            {fileInfo?.fileName && profile?.isAdmin && (
+            {fileInfo?.fileName && (
                 <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
-                    <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileInfo.fileName}</span></p>
-                    {fileInfo.sheetNames.length > 1 && (
-                        <div className="flex items-center gap-2 mt-2 sm:mt-0">
-                            <Label htmlFor="sheet-selector" className="text-muted-foreground">Hoja:</Label>
-                            <Select value={selectedSheet} onValueChange={(newSheet) => {
-                                setSelectedSheet(newSheet);
-                                if (workbook) {
-                                    parseAndUploadSheetData(workbook, newSheet, fileInfo.fileName);
-                                }
-                            }}>
-                                <SelectTrigger id="sheet-selector" className="h-8 w-auto max-w-[200px]">
-                                    <SelectValue placeholder="Selecciona una hoja" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {fileInfo.sheetNames.map(name => (
-                                        <SelectItem key={name} value={name}>{name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    )}
+                    <p className="text-muted-foreground">Archivo de inventario: <span className="font-medium text-foreground">{fileInfo.fileName}</span></p>
                 </div>
             )}
          </div>
@@ -706,7 +656,7 @@ export function OnuFinder({
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${onus?.length || 0} ONUs...`}
+                    placeholder={`Buscar entre ${mergedOnus?.length || 0} ONUs...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -721,15 +671,10 @@ export function OnuFinder({
          </Card>
           
         <div className="mt-6">
-            {isPending || isLoading ? (
-                <div className="space-y-4 pt-4">
+            {isPending || isLoading || isLoadingOnus ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
                     {[...Array(8)].map((_, i) => ( 
-                      <div key={i} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        <Skeleton className="h-36 w-full" />
-                        <Skeleton className="h-36 w-full" />
-                        <Skeleton className="h-36 w-full" />
-                        <Skeleton className="h-36 w-full" />
-                      </div>
+                      <Skeleton key={i} className="h-48 w-full" />
                     ))}
                 </div>
             ) : (
@@ -751,7 +696,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción marcará la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirada. Podrás devolverla al inventario más tarde desde la pestaña "Retiradas".
+              Esta acción marcará la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirada en la base de datos de historial. No se eliminará del archivo de Excel.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -768,7 +713,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Confirmar devolución?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción devolverá la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activas en el estante <strong>{onuToManage?.Shelf}</strong>.
+              Esta acción devolverá la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
