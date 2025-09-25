@@ -269,7 +269,7 @@ export function OnuFinder() {
     localStorage.removeItem('onuFileName');
   };
 
-  const renderOnuCard = (row: OnuData, index: number) => (
+  const renderOnuCard = (row: OnuData, index: number, isRetired = false) => (
     <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className="group flex flex-col justify-between">
       <div>
         <CardHeader>
@@ -287,17 +287,32 @@ export function OnuFinder() {
         </CardContent>
       </div>
       <CardFooter className="p-4">
-        <Button 
-          variant="outline"
-          size="sm"
-          className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
-          onClick={() => {
-            setOnuToManage(row);
-            setIsConfirmRetireOpen(true);
-          }}
-        >
-          Retirar
-        </Button>
+        {isRetired ? (
+          <Button 
+            variant="outline"
+            size="sm"
+            className="w-full text-green-600 hover:text-green-700 hover:bg-green-50 border-green-600/50"
+            onClick={() => {
+              setOnuToManage(row);
+              setIsConfirmRestoreOpen(true);
+            }}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Devolver
+          </Button>
+        ) : (
+          <Button 
+            variant="outline"
+            size="sm"
+            className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
+            onClick={() => {
+              setOnuToManage(row);
+              setIsConfirmRetireOpen(true);
+            }}
+          >
+            Retirar
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );
@@ -317,7 +332,7 @@ export function OnuFinder() {
                         </AccordionTrigger>
                         <AccordionContent>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-                                {onus.map(renderOnuCard)}
+                                {onus.map((onu, index) => renderOnuCard(onu, index, false))}
                             </div>
                         </AccordionContent>
                     </AccordionItem>
@@ -334,6 +349,20 @@ export function OnuFinder() {
             </div>
         )}
     </div>
+  );
+
+  const renderRemovedList = () => (
+      <div className="space-y-4">
+        {removedOnus.length > 0 ? (
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+               {removedOnus.map((onu, index) => renderOnuCard(onu, index, true))}
+           </div>
+        ) : (
+            <div className="text-center py-16 border-2 border-dashed rounded-lg">
+                <p className="text-muted-foreground">No hay ONUs retiradas.</p>
+            </div>
+        )}
+      </div>
   );
   
   if (isHydrating) {
@@ -419,7 +448,7 @@ export function OnuFinder() {
         <>
          <div className="space-y-4">
             <div className="flex justify-between items-center gap-4 flex-wrap">
-                <h2 className="text-2xl font-headline font-semibold">Inventario de ONUs Activas ({data.length})</h2>
+                <h2 className="text-2xl font-headline font-semibold">Inventario de ONUs</h2>
                 <div className="flex gap-2">
                     <Dialog open={isAddOnuOpen} onOpenChange={setIsAddOnuOpen}>
                         <DialogTrigger asChild>
@@ -469,8 +498,8 @@ export function OnuFinder() {
 
          <Card>
             <CardHeader>
-                <CardTitle>Búsqueda Rápida de ONU</CardTitle>
-                <CardDescription>Encuentra una ONU específica buscando por su ID.</CardDescription>
+                <CardTitle>Búsqueda Rápida</CardTitle>
+                <CardDescription>Busca por ID en todas las ONUs, tanto activas como retiradas.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="max-w-xl">
@@ -480,7 +509,7 @@ export function OnuFinder() {
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${data.length} ONUs activas...`}
+                    placeholder={`Buscar entre ${data.length + removedOnus.length} ONUs...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -494,15 +523,34 @@ export function OnuFinder() {
             </CardContent>
          </Card>
           
-          <div className="mt-6">
-            {isPending ? (
-              <div className="space-y-4">
-                  {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
-              </div>
-            ) : (
-              renderShelfAccordion()
-            )}
-          </div>
+          <Tabs defaultValue="activas" className="mt-6">
+            <TabsList>
+                <TabsTrigger value="activas">
+                    Activas <Badge variant="secondary" className="ml-2">{data.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="retiradas">
+                    Retiradas <Badge variant="outline" className="ml-2">{removedOnus.length}</Badge>
+                </TabsTrigger>
+            </TabsList>
+            <TabsContent value="activas">
+                {isPending ? (
+                  <div className="space-y-4 pt-4">
+                      {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
+                  </div>
+                ) : (
+                  renderShelfAccordion()
+                )}
+            </TabsContent>
+            <TabsContent value="retiradas">
+                 {isPending ? (
+                  <div className="space-y-4 pt-4">
+                     <Skeleton className="h-40 w-full" />
+                  </div>
+                ) : (
+                  renderRemovedList()
+                )}
+            </TabsContent>
+          </Tabs>
         </>
       )}
 
