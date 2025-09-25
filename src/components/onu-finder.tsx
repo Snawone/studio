@@ -86,6 +86,7 @@ export function OnuFinder({
   const [onusFromCloudSheet, setOnusFromCloudSheet] = useState<OnuFromSheet[]>([]);
   const [onusFromLocalFile, setOnusFromLocalFile] = useState<OnuFromSheet[]>([]);
   const [localFileName, setLocalFileName] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -288,7 +289,7 @@ export function OnuFinder({
           history: [{ action: 'created', date: addedDate, source: 'manual'}],
           status: 'active',
       };
-      const docRef = doc(firestore, 'onus', newOnu.id);
+      const docRef = doc(firestore, 'onus', newOnuId);
       setDocumentNonBlocking(docRef, newOnu, { merge: true });
       setNewOnuId('');
       setNewOnuShelf('');
