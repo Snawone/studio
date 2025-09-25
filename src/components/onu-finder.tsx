@@ -51,22 +51,27 @@ export function OnuFinder() {
         if (sheetData.length < 2) {
           throw new Error("La hoja de cálculo está vacía o no tiene el formato correcto.");
         }
-
-        const headers = sheetData[0].filter(h => h); // Shelf names
+        
+        const headers = sheetData[0]; // Shelf names
         const newOnuData: OnuData[] = [];
 
-        for (let i = 1; i < sheetData.length; i++) {
-          const row = sheetData[i];
-          for (let j = 0; j < headers.length; j++) {
+        // Find the maximum number of columns
+        const numCols = headers.length;
+
+        for (let j = 0; j < numCols; j++) {
             const shelf = headers[j];
-            const onuId = row[j];
-            if (onuId) {
-              newOnuData.push({
-                'Shelf': String(shelf),
-                'ONU ID': String(onuId),
-              });
+            if (shelf) { // Process only if the column has a header
+                for (let i = 1; i < sheetData.length; i++) {
+                    const row = sheetData[i];
+                    const onuId = row[j];
+                    if (onuId) {
+                        newOnuData.push({
+                            'Shelf': String(shelf),
+                            'ONU ID': String(onuId),
+                        });
+                    }
+                }
             }
-          }
         }
 
         if (newOnuData.length === 0) {
