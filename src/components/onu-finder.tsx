@@ -85,7 +85,6 @@ export function OnuFinder({
   
   const [onusFromSheet, setOnusFromSheet] = useState<OnuFromSheet[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isHydrating, setIsHydrating] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -101,42 +100,15 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   useEffect(() => {
-    setIsHydrating(false);
-  }, []);
-
-  const mergedOnus = useMemo(() => {
-    if (onusFromSheet.length === 0) {
-      // If the sheet hasn't been loaded, rely on Firestore data, especially for 'retiradas' view
-      return activeView === 'retiradas' ? onusFromFirestore : [];
-    }
-
-    const firestoreMap = new Map(onusFromFirestore.map(onu => [onu.id, onu]));
-    
-    const combined = onusFromSheet.map(sheetOnu => {
-      const firestoreData = firestoreMap.get(sheetOnu['ONU ID']);
-      return {
-        id: sheetOnu['ONU ID'],
-        'ONU ID': sheetOnu['ONU ID'],
-        'Shelf': sheetOnu['Shelf'],
-        status: firestoreData?.status || 'active', // Default to active if not in firestore
-        addedDate: firestoreData?.addedDate || new Date().toISOString(),
-        removedDate: firestoreData?.removedDate,
-        history: firestoreData?.history || [],
-      };
-    });
-
-    return combined.filter(onu => onu.status === (activeView === 'activas' ? 'active' : 'removed'));
-  }, [onusFromSheet, onusFromFirestore, activeView]);
-
-  useEffect(() => {
     if (fileInfo && fileInfo.fileUrl) {
       setIsLoading(true);
       setError(null);
       const fetchAndProcessFile = async () => {
         try {
-          // Use a proxy to bypass CORS issues in development
+          // In a real-world scenario, you might need a proxy for this to work in development
+          // due to CORS policies. For Firebase Storage, this usually works out of the box.
           const response = await fetch(fileInfo.fileUrl);
-          if (!response.ok) throw new Error(`Network response was not ok: ${response.statusText}`);
+          if (!response.ok) throw new Error(`Error al descargar el archivo: ${response.statusText}`);
           const arrayBuffer = await response.arrayBuffer();
           const workbook = XLSX.read(arrayBuffer, { type: 'array' });
           const sheetName = fileInfo.sheetName || workbook.SheetNames[0];
@@ -181,6 +153,32 @@ export function OnuFinder({
     }
   }, [fileInfo]);
 
+
+  const mergedOnus = useMemo(() => {
+    if (onusFromSheet.length === 0) {
+      // While sheet is loading or if there's no file, show Firestore data for retired ONUs
+      return activeView === 'retiradas' ? onusFromFirestore : [];
+    }
+
+    const firestoreMap = new Map(onusFromFirestore.map(onu => [onu.id, onu]));
+    
+    const combined = onusFromSheet.map(sheetOnu => {
+      const firestoreData = firestoreMap.get(sheetOnu['ONU ID']);
+      return {
+        id: sheetOnu['ONU ID'],
+        'ONU ID': sheetOnu['ONU ID'],
+        'Shelf': sheetOnu['Shelf'],
+        status: firestoreData?.status || 'active',
+        addedDate: firestoreData?.addedDate || new Date().toISOString(),
+        removedDate: firestoreData?.removedDate,
+        history: firestoreData?.history || [],
+      };
+    });
+    
+    return combined.filter(onu => onu.status === (activeView === 'activas' ? 'active' : 'removed'));
+  }, [onusFromSheet, onusFromFirestore, activeView]);
+  
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -194,12 +192,51 @@ export function OnuFinder({
       const uploadResult = await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(uploadResult.ref);
 
-      // 2. Save file info to Firestore
+      // 2. Read the file to get sheet names and process data for Firestore
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0]; // For now, just use the first sheet
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+      
+      const headers = jsonData[0].map(h => String(h || '').trim());
+      const batch = writeBatch(firestore);
+      const addedDate = new Date().toISOString();
+
+      for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+          const shelf = headers[colIndex];
+          if (shelf) {
+              for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
+                  const row = jsonData[rowIndex];
+                  if(row) {
+                      const onuId = row[colIndex];
+                      if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
+                          const id = String(onuId);
+                          const docRef = doc(firestore, 'onus', id);
+                          const newHistoryEntry: OnuHistoryEntry = { action: 'added', date: addedDate, source: 'file' };
+                          
+                          // Set document with initial data and merge to not overwrite status/history
+                          batch.set(docRef, {
+                            id: id,
+                            'ONU ID': id,
+                            'Shelf': shelf,
+                            addedDate: addedDate,
+                            history: [newHistoryEntry],
+                            status: 'active'
+                          }, { merge: true });
+                      }
+                  }
+              }
+          }
+      }
+      await batch.commit();
+
+      // 3. Save file info to Firestore
       const fileInfoRef = doc(firestore, 'settings', 'fileInfo');
       const newFileInfo: FileInfo = {
           fileName: file.name,
           fileUrl: downloadURL,
-          sheetName: '', // This could be set if you allow sheet selection
+          sheetName: sheetName,
           lastUpdated: new Date().toISOString(),
       };
       await setDoc(fileInfoRef, newFileInfo);
@@ -514,16 +551,16 @@ export function OnuFinder({
       </div>
   );
   
-  if (isHydrating) {
+  const showUploadCard = !fileInfo && profile?.isAdmin;
+
+  if (isLoading) {
     return (
         <section className="w-full max-w-7xl mx-auto flex flex-col gap-8 justify-center items-center min-h-[calc(100vh-200px)]">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <p className="text-muted-foreground">Cargando datos...</p>
+          <p className="text-muted-foreground">Cargando datos del inventario...</p>
         </section>
     );
   }
-
-  const showUploadCard = !fileInfo && profile?.isAdmin;
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
@@ -539,13 +576,6 @@ export function OnuFinder({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
-            {isLoading ? (
-              <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Subiendo archivo a la nube...</p>
-              </div>
-            ) : (
-              <>
                 {error && (
                     <Alert variant="destructive">
                         <AlertTriangle className="h-4 w-4" />
@@ -566,8 +596,6 @@ export function OnuFinder({
                         Subir Archivo
                     </Button>
                 </div>
-              </>
-            )}
           </CardContent>
         </Card>
       ) : (
@@ -629,9 +657,9 @@ export function OnuFinder({
                           </DialogContent>
                       </Dialog>
                       <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".xlsx, .xls, .csv" />
-                      <Button onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+                      <Button onClick={() => fileInputRef.current?.click()}>
                           <Upload className="mr-2 h-4 w-4" />
-                          {isLoading ? 'Subiendo...' : 'Actualizar Archivo'}
+                          Actualizar Archivo
                       </Button>
                   </div>
                 )}
@@ -671,7 +699,7 @@ export function OnuFinder({
          </Card>
           
         <div className="mt-6">
-            {isPending || isLoading || isLoadingOnus ? (
+            {isPending || isLoadingOnus ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
                     {[...Array(8)].map((_, i) => ( 
                       <Skeleton key={i} className="h-48 w-full" />
@@ -727,3 +755,5 @@ export function OnuFinder({
     </section>
   );
 }
+
+    
