@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useTransition, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { type OnuData } from "@/lib/data";
+import { type OnuData, type OnuHistoryEntry } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,7 +25,8 @@ import {
     DialogTitle, 
     DialogTrigger, 
     DialogFooter,
-    DialogClose
+    DialogClose,
+    DialogDescription
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -44,14 +45,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2, Calendar as CalendarIcon, Trash2 } from "lucide-react";
+import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2, Calendar as CalendarIcon, Trash2, History, PackagePlus, FileDown, Repeat } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Icons } from '@/components/icons';
-import { Boxes } from 'lucide-react';
-
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
@@ -176,6 +173,7 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
                                 'Shelf': shelf,
                                 'ONU ID': String(onuId),
                                 addedDate: fileProcessDate,
+                                history: [{ action: 'added', date: fileProcessDate, source: 'file' }]
                             });
                         }
                     }
@@ -279,7 +277,12 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
 
   const handleConfirmRetire = () => {
     if (onuToManage) {
-        const retiredOnu = { ...onuToManage, removedDate: new Date().toISOString() };
+        const removedDate = new Date().toISOString();
+        const retiredOnu: OnuData = { 
+            ...onuToManage, 
+            removedDate,
+            history: [...(onuToManage.history || []), { action: 'removed', date: removedDate }]
+        };
         setData(prevData => prevData.filter(onu => onu['ONU ID'] !== retiredOnu['ONU ID']));
         setRemovedOnus(prevRemoved => [retiredOnu, ...prevRemoved]);
     }
@@ -289,7 +292,11 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
   
   const handleConfirmRestore = () => {
     if (onuToManage) {
-      const restoredOnu = { ...onuToManage };
+      const restoredDate = new Date().toISOString();
+      const restoredOnu: OnuData = { 
+        ...onuToManage,
+        history: [...(onuToManage.history || []), { action: 'restored', date: restoredDate }]
+      };
       delete restoredOnu.removedDate;
       setRemovedOnus(prevRemoved => prevRemoved.filter(onu => onu['ONU ID'] !== restoredOnu['ONU ID']));
       setData(prevData => [restoredOnu, ...prevData]);
@@ -303,10 +310,12 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
           alert("Por favor completa ambos campos.");
           return;
       }
+      const addedDate = new Date().toISOString();
       const newOnu: OnuData = {
           'ONU ID': newOnuId,
           'Shelf': newOnuShelf,
-          addedDate: new Date().toISOString(),
+          addedDate: addedDate,
+          history: [{ action: 'created', date: addedDate, source: 'manual'}]
       };
       setData(prevData => [newOnu, ...prevData]);
       setNewOnuId('');
@@ -376,6 +385,26 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     }
   };
 
+  const getHistoryIcon = (action: OnuHistoryEntry['action']) => {
+    switch (action) {
+      case 'created': return <PackagePlus className="h-4 w-4 text-green-500" />;
+      case 'added': return <FileDown className="h-4 w-4 text-blue-500" />;
+      case 'removed': return <Trash2 className="h-4 w-4 text-red-500" />;
+      case 'restored': return <Repeat className="h-4 w-4 text-yellow-500" />;
+      default: return <History className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
+  const getHistoryMessage = (entry: OnuHistoryEntry) => {
+    switch (entry.action) {
+      case 'created': return `Creada manualmente`;
+      case 'added': return `Agregada desde archivo`;
+      case 'removed': return `Retirada del inventario`;
+      case 'restored': return `Devuelta al inventario`;
+      default: return `Acción desconocida`;
+    }
+  }
+
   const renderOnuCard = (row: OnuData, index: number, isRetired = false) => {
     const isExactMatch = searchTerm.length > 0 && row['ONU ID'].toLowerCase() === searchTerm.toLowerCase();
     const onuId = row['ONU ID'];
@@ -385,22 +414,50 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     return (
       <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className={`group flex flex-col justify-between transition-all duration-300 ${isExactMatch ? 'border-primary shadow-lg scale-105' : ''}`}>
         <div>
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-start text-base text-primary break-all font-mono">
-              <Tag className="mr-2 h-4 w-4 flex-shrink-0 mt-1"/>
-              <div>
-                {isExactMatch ? (
-                  <>
-                    <span className="text-muted-foreground">{idPrefix}</span>
-                    <span className="font-bold text-lg text-foreground">{idSuffix}</span>
-                  </>
-                ) : (
-                  onuId
-                )}
-              </div>
-            </CardTitle>
+          <CardHeader className="pb-2">
+             <div className="flex justify-between items-start">
+                <CardTitle className="flex items-start text-base text-primary break-all font-mono">
+                <Tag className="mr-2 h-4 w-4 flex-shrink-0 mt-1"/>
+                <div>
+                    {isExactMatch ? (
+                    <>
+                        <span className="text-muted-foreground">{idPrefix}</span>
+                        <span className="font-bold text-lg text-foreground">{idSuffix}</span>
+                    </>
+                    ) : (
+                    onuId
+                    )}
+                </div>
+                </CardTitle>
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <History className="h-4 w-4" />
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Historial de la ONU</DialogTitle>
+                            <DialogDescription className="font-mono break-all pt-2">{row["ONU ID"]}</DialogDescription>
+                        </DialogHeader>
+                        <div className="max-h-80 overflow-y-auto pr-4">
+                            <ul className="space-y-4 mt-4">
+                                {[...(row.history || [])].reverse().map((entry, idx) => (
+                                    <li key={idx} className="flex items-start gap-3">
+                                        <div className="mt-1">{getHistoryIcon(entry.action)}</div>
+                                        <div>
+                                            <p className="font-medium text-sm">{getHistoryMessage(entry)}</p>
+                                            <p className="text-xs text-muted-foreground">{formatDate(entry.date)}</p>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            </div>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3 text-sm">
+          <CardContent className="flex flex-col gap-3 text-sm pt-2">
             <p className="flex items-center font-medium">
               <Server className="mr-2 h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground mr-2">Estante:</span> 
@@ -759,5 +816,3 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     </section>
   );
 }
-
-    
