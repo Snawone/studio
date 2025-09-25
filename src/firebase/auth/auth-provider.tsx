@@ -62,10 +62,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/app')) {
             router.push('/app');
           }
+           setAuthLoading(false); // Fix: Set loading to false when profile is found
         }
         // If the doc doesn't exist, we wait. It might be in the process of being created.
         // The main page's loading state will handle showing a spinner.
-        setAuthLoading(false);
       }, (error) => {
           console.error("Error fetching user profile:", error);
           setAuthLoading(false);
