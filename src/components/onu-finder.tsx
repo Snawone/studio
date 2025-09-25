@@ -53,7 +53,7 @@ import { useFirestore } from "@/firebase";
 import { writeBatch, doc, updateDoc, setDoc } from "firebase/firestore";
 import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { useAuthContext } from "@/firebase/auth/auth-provider";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getStorage, ref, uploadBytes, getDownloadURL, getBytes } from "firebase/storage";
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
@@ -98,18 +98,22 @@ export function OnuFinder({
   const [onuToManage, setOnuToManage] = useState<OnuData | null>(null);
   const [isConfirmRetireOpen, setIsConfirmRetireOpen] = useState(false);
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
+  
+  const [mergedOnus, setMergedOnus] = useState<OnuData[]>([]);
 
   useEffect(() => {
-    if (fileInfo && fileInfo.fileUrl) {
-      setIsLoading(true);
-      setError(null);
       const fetchAndProcessFile = async () => {
+        if (!fileInfo || !fileInfo.fileUrl) {
+          setIsLoading(false);
+          return;
+        }
+
+        setIsLoading(true);
+        setError(null);
         try {
-          // In a real-world scenario, you might need a proxy for this to work in development
-          // due to CORS policies. For Firebase Storage, this usually works out of the box.
-          const response = await fetch(fileInfo.fileUrl);
-          if (!response.ok) throw new Error(`Error al descargar el archivo: ${response.statusText}`);
-          const arrayBuffer = await response.arrayBuffer();
+          const storageRef = ref(storage, fileInfo.fileUrl);
+          const arrayBuffer = await getBytes(storageRef);
+
           const workbook = XLSX.read(arrayBuffer, { type: 'array' });
           const sheetName = fileInfo.sheetName || workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
@@ -117,6 +121,7 @@ export function OnuFinder({
 
           if (jsonData.length < 2) {
             setError('La hoja de cálculo está vacía o tiene un formato incorrecto.');
+            setIsLoading(false);
             return;
           }
 
@@ -149,15 +154,19 @@ export function OnuFinder({
           setIsLoading(false);
         }
       };
+      
       fetchAndProcessFile();
-    }
-  }, [fileInfo]);
+  }, [fileInfo, storage]);
 
 
-  const mergedOnus = useMemo(() => {
+  useEffect(() => {
     if (onusFromSheet.length === 0) {
-      // While sheet is loading or if there's no file, show Firestore data for retired ONUs
-      return activeView === 'retiradas' ? onusFromFirestore : [];
+      if (activeView === 'retiradas') {
+         setMergedOnus(onusFromFirestore);
+      } else {
+         setMergedOnus([]);
+      }
+      return;
     }
 
     const firestoreMap = new Map(onusFromFirestore.map(onu => [onu.id, onu]));
@@ -175,7 +184,7 @@ export function OnuFinder({
       };
     });
     
-    return combined.filter(onu => onu.status === (activeView === 'activas' ? 'active' : 'removed'));
+    setMergedOnus(combined.filter(onu => onu.status === (activeView === 'activas' ? 'active' : 'removed')));
   }, [onusFromSheet, onusFromFirestore, activeView]);
   
 
@@ -188,60 +197,29 @@ export function OnuFinder({
 
     try {
       // 1. Upload to Firebase Storage
-      const storageRef = ref(storage, `inventory/onus.xlsx`);
+      const filePath = `inventory/onus.xlsx`;
+      const storageRef = ref(storage, filePath);
       const uploadResult = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(uploadResult.ref);
+      
+      // We don't need the downloadURL, just the path.
+      // const downloadURL = await getDownloadURL(uploadResult.ref);
 
-      // 2. Read the file to get sheet names and process data for Firestore
+      // 2. Read the file locally to get sheet names for metadata
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const sheetName = workbook.SheetNames[0]; // For now, just use the first sheet
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-      
-      const headers = jsonData[0].map(h => String(h || '').trim());
-      const batch = writeBatch(firestore);
-      const addedDate = new Date().toISOString();
-
-      for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-          const shelf = headers[colIndex];
-          if (shelf) {
-              for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
-                  const row = jsonData[rowIndex];
-                  if(row) {
-                      const onuId = row[colIndex];
-                      if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
-                          const id = String(onuId);
-                          const docRef = doc(firestore, 'onus', id);
-                          const newHistoryEntry: OnuHistoryEntry = { action: 'added', date: addedDate, source: 'file' };
-                          
-                          // Set document with initial data and merge to not overwrite status/history
-                          batch.set(docRef, {
-                            id: id,
-                            'ONU ID': id,
-                            'Shelf': shelf,
-                            addedDate: addedDate,
-                            history: [newHistoryEntry],
-                            status: 'active'
-                          }, { merge: true });
-                      }
-                  }
-              }
-          }
-      }
-      await batch.commit();
+      const sheetName = workbook.SheetNames[0];
 
       // 3. Save file info to Firestore
       const fileInfoRef = doc(firestore, 'settings', 'fileInfo');
       const newFileInfo: FileInfo = {
           fileName: file.name,
-          fileUrl: downloadURL,
+          fileUrl: filePath, // Store the path, not the full URL
           sheetName: sheetName,
           lastUpdated: new Date().toISOString(),
       };
       await setDoc(fileInfoRef, newFileInfo);
       
-      // The useEffect will trigger a re-fetch and process automatically
+      // The useEffect listening to fileInfo will trigger a re-fetch and process automatically
     } catch (err: any) {
       console.error("Error during file upload process:", err);
       setError(err.message || 'Error al subir o procesar el archivo.');
@@ -755,5 +733,7 @@ export function OnuFinder({
     </section>
   );
 }
+
+    
 
     
