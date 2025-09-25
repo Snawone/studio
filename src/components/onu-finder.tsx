@@ -26,6 +26,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FileSpreadsheet, Search, Upload, Package, Rows, Tag, Server, Link, AlertTriangle } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
 
 export function OnuFinder() {
   const [data, setData] = useState<OnuData[]>([]);
@@ -60,14 +62,13 @@ export function OnuFinder() {
         setData(jsonData);
         const firstRow = jsonData[0];
 
-        // Validar que la primera fila es un objeto y no está vacía
         if (typeof firstRow !== 'object' || firstRow === null || Object.keys(firstRow).length === 0) {
             throw new Error("El formato de los datos no es válido. La primera fila está vacía o corrupta.");
         }
 
         const newHeaders = Object.keys(firstRow);
         setHeaders(newHeaders);
-        setSearchColumn(newHeaders[0]);
+        setSearchColumn(newHeaders.find(h => h.toLowerCase().includes('id')) || newHeaders[0]);
         setFileName(file.name);
         setIsDataLoaded(true);
         setError(null);
@@ -116,14 +117,26 @@ export function OnuFinder() {
   };
 
   const filteredResults = useMemo(() => {
-    if (!searchTerm) return data;
-    if (!searchColumn) return data;
+    if (!searchTerm) return [];
+    if (!searchColumn) return [];
 
     return data.filter((row) => {
         const value = row[searchColumn as keyof OnuData];
         return value?.toString().toLowerCase().includes(searchTerm.toLowerCase());
     });
   }, [searchTerm, searchColumn, data]);
+
+  const shelves = useMemo(() => {
+    const shelfMap: Record<string, OnuData[]> = {};
+    data.forEach(onu => {
+        const shelf = onu.Shelf || 'Sin Estante';
+        if (!shelfMap[shelf]) {
+            shelfMap[shelf] = [];
+        }
+        shelfMap[shelf].push(onu);
+    });
+    return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB));
+  }, [data]);
 
   const getStatusVariant = (status: OnuData['Status']) => {
     if (!status) return 'outline';
@@ -156,6 +169,36 @@ export function OnuFinder() {
         fileInputRef.current.value = '';
     }
   };
+
+  const renderOnuCard = (row: OnuData, index: number) => (
+    <Card key={index}>
+      <CardHeader>
+        <CardTitle className="flex items-center text-primary">
+          <Tag className="mr-2 h-5 w-5"/>
+          {row['ONU ID']}
+        </CardTitle>
+        <CardDescription className="flex items-center">
+          <Package className="mr-2 h-4 w-4"/>
+          {row.Model}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm font-medium">
+        <p className="flex items-center">
+          <Server className="mr-2 h-4 w-4 text-muted-foreground" />
+          <span className="text-muted-foreground mr-2">Estante:</span> 
+          <span className="font-bold text-foreground">{row.Shelf}</span>
+        </p>
+        <p className="flex items-center">
+          <Rows className="mr-2 h-4 w-4 text-muted-foreground" />
+           <span className="text-muted-foreground mr-2">Rack:</span>
+           <span className="font-bold text-foreground">{row.Rack}</span>
+        </p>
+      </CardContent>
+      <CardFooter>
+         <Badge variant={getStatusVariant(row.Status)}>{row.Status || 'N/A'}</Badge>
+      </CardFooter>
+    </Card>
+  );
 
 
   return (
@@ -231,105 +274,121 @@ export function OnuFinder() {
         <>
          <div className="space-y-4">
             <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-headline font-semibold">Búsqueda de Equipos</h2>
+                <h2 className="text-2xl font-headline font-semibold">Inventario de Equipos</h2>
                 <Button variant="outline" size="sm" onClick={resetState}>
                     Cargar otro archivo
                 </Button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-lg bg-card">
-              <div className="space-y-2">
-                <Label htmlFor="search-column">Buscar en Columna</Label>
-                <Select value={searchColumn} onValueChange={setSearchColumn}>
-                  <SelectTrigger id="search-column" className="w-full">
-                    <SelectValue placeholder="Seleccionar columna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {headers.map((header) => (
-                      <SelectItem key={header} value={header}>
-                        <div className="flex items-center">
-                           {getIconForHeader(header)}
-                           {header}
+            <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileName}</span></p>
+         </div>
+
+         <Card>
+            <CardHeader>
+                <CardTitle>Búsqueda Rápida</CardTitle>
+                <CardDescription>Encuentra un equipo específico buscando por cualquiera de sus atributos.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="search-column">Buscar en Columna</Label>
+                        <Select value={searchColumn} onValueChange={setSearchColumn}>
+                        <SelectTrigger id="search-column" className="w-full">
+                            <SelectValue placeholder="Seleccionar columna" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {headers.map((header) => (
+                            <SelectItem key={header} value={header}>
+                                <div className="flex items-center">
+                                {getIconForHeader(header)}
+                                {header}
+                                </div>
+                            </SelectItem>
+                            ))}
+                        </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="search-term">Término de Búsqueda</Label>
+                        <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            id="search-term"
+                            type="text"
+                            placeholder={`Buscar en "${searchColumn}"...`}
+                            value={searchTerm}
+                            onChange={(e) => {
+                            startTransition(() => {
+                                setSearchTerm(e.target.value);
+                            });
+                            }}
+                            className="pl-10 w-full"
+                            disabled={!searchColumn}
+                        />
                         </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="search-term">Término de Búsqueda</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="search-term"
-                    type="text"
-                    placeholder={`Buscar en "${searchColumn}"...`}
-                    value={searchTerm}
-                    onChange={(e) => {
-                      startTransition(() => {
-                        setSearchTerm(e.target.value);
-                      });
-                    }}
-                    className="pl-10 w-full"
-                    disabled={!searchColumn}
-                  />
+                    </div>
                 </div>
-              </div>
-            </div>
-          </div>
+            </CardContent>
+         </Card>
           
-          <div className="space-y-4">
-             <h3 className="text-xl font-headline font-semibold">Resultados para "{fileName}" ({filteredResults.length})</h3>
-             {isPending ? (
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {[...Array(6)].map((_, i) => (
-                        <Card key={i}>
-                            <CardHeader><Skeleton className="h-6 w-3/4" /></CardHeader>
-                            <CardContent className="space-y-2">
-                                <Skeleton className="h-4 w-1/2" />
-                                <Skeleton className="h-4 w-1/3" />
-                            </CardContent>
-                            <CardFooter><Skeleton className="h-6 w-20" /></CardFooter>
-                        </Card>
-                    ))}
-                 </div>
-             ) : filteredResults.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in-50">
-                  {filteredResults.map((row, index) => (
-                    <Card key={index}>
-                      <CardHeader>
-                        <CardTitle className="flex items-center text-primary">
-                          <Tag className="mr-2 h-5 w-5"/>
-                          {row['ONU ID']}
-                        </CardTitle>
-                        <CardDescription className="flex items-center">
-                          <Package className="mr-2 h-4 w-4"/>
-                          {row.Model}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-2 text-sm font-medium">
-                        <p className="flex items-center">
-                          <Server className="mr-2 h-4 w-4 text-muted-foreground" />
-                          <span className="text-muted-foreground mr-2">Estante:</span> 
-                          <span className="font-bold text-foreground">{row.Shelf}</span>
-                        </p>
-                        <p className="flex items-center">
-                          <Rows className="mr-2 h-4 w-4 text-muted-foreground" />
-                           <span className="text-muted-foreground mr-2">Rack:</span>
-                           <span className="font-bold text-foreground">{row.Rack}</span>
-                        </p>
-                      </CardContent>
-                      <CardFooter>
-                         <Badge variant={getStatusVariant(row.Status)}>{row.Status || 'N/A'}</Badge>
-                      </CardFooter>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                    <p className="text-muted-foreground">No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</p>
-                </div>
-              )}
-          </div>
+        {searchTerm ? (
+            <div className="space-y-4">
+                <h3 className="text-xl font-headline font-semibold">Resultados de Búsqueda ({filteredResults.length})</h3>
+                {isPending ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {[...Array(3)].map((_, i) => (
+                            <Card key={i}>
+                                <CardHeader><Skeleton className="h-6 w-3/4" /></CardHeader>
+                                <CardContent className="space-y-2">
+                                    <Skeleton className="h-4 w-1/2" />
+                                    <Skeleton className="h-4 w-1/3" />
+                                </CardContent>
+                                <CardFooter><Skeleton className="h-6 w-20" /></CardFooter>
+                            </Card>
+                        ))}
+                    </div>
+                ) : filteredResults.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in-50">
+                    {filteredResults.map(renderOnuCard)}
+                    </div>
+                ) : (
+                    <div className="text-center py-16 border-2 border-dashed rounded-lg">
+                        <p className="text-muted-foreground">No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</p>
+                    </div>
+                )}
+            </div>
+        ) : (
+            <div className="space-y-4">
+                <h3 className="text-xl font-headline font-semibold">Equipos por Estante</h3>
+                {isLoading ? (
+                     <div className="space-y-4">
+                        {[...Array(3)].map((_, i) => ( <Skeleton key={i} className="h-12 w-full" /> ))}
+                    </div>
+                ) : shelves.length > 0 ? (
+                    <Accordion type="single" collapsible className="w-full">
+                        {shelves.map(([shelf, onus]) => (
+                            <AccordionItem value={shelf} key={shelf}>
+                                <AccordionTrigger>
+                                    <div className="flex items-center gap-3">
+                                        <Server className="h-5 w-5 text-primary" />
+                                        <span className="font-medium">{shelf}</span>
+                                        <Badge variant="secondary">{onus.length} ONUs</Badge>
+                                    </div>
+                                </AccordionTrigger>
+                                <AccordionContent>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+                                        {onus.map(renderOnuCard)}
+                                    </div>
+                                </AccordionContent>
+                            </AccordionItem>
+                        ))}
+                    </Accordion>
+                ) : (
+                    <div className="text-center py-16 border-2 border-dashed rounded-lg">
+                        <p className="text-muted-foreground">No hay datos de estantes para mostrar.</p>
+                    </div>
+                )}
+            </div>
+        )}
         </>
       )}
     </section>
