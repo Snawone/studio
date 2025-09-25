@@ -9,16 +9,21 @@ export type OnuHistoryEntry = {
 export type OnuData = {
   id: string;
   'ONU ID': string;
-  'Shelf': string;
+  shelfId: string;
+  shelfName: string; // Denormalized for easier display
   addedDate: string;
   removedDate?: string | null;
   history: OnuHistoryEntry[];
   status: 'active' | 'removed';
 };
 
-export type OnuFromSheet = {
-  'ONU ID': string;
-  'Shelf': string;
+export type Shelf = {
+  id: string;
+  name: string;
+  capacity: number;
+  type: 'onu' | 'stb';
+  createdAt: string;
+  itemCount: number; // Maintained through transactions or cloud functions
 };
 
 export type UserProfile = {

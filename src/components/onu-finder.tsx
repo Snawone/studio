@@ -2,8 +2,7 @@
 "use client";
 
 import { useState, useMemo, useTransition, useRef, useEffect, Dispatch, SetStateAction } from "react";
-import * as XLSX from "xlsx";
-import { type OnuData, type OnuHistoryEntry, type FileInfo, type OnuFromSheet } from "@/lib/data";
+import { type OnuData, type OnuHistoryEntry } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,7 +16,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { 
     Dialog, 
     DialogContent, 
@@ -45,123 +43,40 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2, Calendar as CalendarIcon, Trash2, History, PackagePlus, FileDown, Repeat, SearchCheck, Check, File, XCircle } from "lucide-react";
+import { Search, Server, Tag, Loader2, Calendar as CalendarIcon, Trash2, RotateCcw, History, PackagePlus, Repeat, SearchCheck, Check } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from "@/firebase";
-import { writeBatch, doc, updateDoc, setDoc } from "firebase/firestore";
+import { doc } from "firebase/firestore";
 import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
 import { useAuthContext } from "@/firebase/auth/auth-provider";
-import { getStorage, ref, uploadBytes, getDownloadURL, getBytes } from "firebase/storage";
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
-    onusFromFirestore: OnuData[];
+    onus: OnuData[];
     searchList: string[];
-    allShelves: string[];
     userId: string;
-    fileInfo: FileInfo | null;
     isLoadingOnus: boolean;
-    onusFromLocalFile: OnuFromSheet[];
-    setOnusFromLocalFile: Dispatch<SetStateAction<OnuFromSheet[]>>;
-    localFileName: string | null;
-    setLocalFileName: Dispatch<SetStateAction<string | null>>;
-    processExcel: (arrayBuffer: ArrayBuffer, sheetName?: string) => OnuFromSheet[];
 }
 
 
 export function OnuFinder({ 
   activeView, 
-  onusFromFirestore: mergedOnus,
+  onus,
   searchList,
-  allShelves,
   userId,
-  fileInfo,
   isLoadingOnus,
-  onusFromLocalFile,
-  setOnusFromLocalFile,
-  localFileName,
-  setLocalFileName,
-  processExcel,
 }: OnuFinderProps) {
   const firestore = useFirestore();
   const { profile } = useAuthContext();
-  const storage = getStorage();
   
   const [searchTerm, setSearchTerm] = useState('');
-
-  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const localFileInputRef = useRef<HTMLInputElement>(null);
-
-  const [newOnuId, setNewOnuId] = useState('');
-  const [newOnuShelf, setNewOnuShelf] = useState('');
-  const [isAddOnuOpen, setIsAddOnuOpen] = useState(false);
 
   const [onuToManage, setOnuToManage] = useState<OnuData | null>(null);
   const [isConfirmRetireOpen, setIsConfirmRetireOpen] = useState(false);
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
-  
-  const handleCloudUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setError(null);
-    clearLocalFile();
-
-    try {
-      const filePath = `inventory/onus.xlsx`;
-      const storageRef = ref(storage, filePath);
-      await uploadBytes(storageRef, file);
-      
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-
-      const fileInfoRef = doc(firestore, 'settings', 'fileInfo');
-      const newFileInfo: FileInfo = {
-          fileName: file.name,
-          fileUrl: filePath,
-          sheetName: sheetName,
-          lastUpdated: new Date().toISOString(),
-      };
-      await setDoc(fileInfoRef, newFileInfo);
-      
-    } catch (err: any) {
-      console.error("Error during file upload process:", err);
-      setError(err.message || 'Error al subir o procesar el archivo.');
-    }
-  };
-
-  const handleLocalUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setError(null);
-    setLocalFileName(null);
-    setOnusFromLocalFile([]);
-    
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const jsonData = processExcel(arrayBuffer);
-      setOnusFromLocalFile(jsonData);
-      setLocalFileName(file.name);
-    } catch (err: any) {
-      console.error("Error processing local file:", err);
-      setError(err.message || 'Error al procesar el archivo local.');
-    }
-  };
-
-  const clearLocalFile = () => {
-    setLocalFileName(null);
-    setOnusFromLocalFile([]);
-    if(localFileInputRef.current) {
-        localFileInputRef.current.value = "";
-    }
-  }
-
 
   const handleConfirmRetire = () => {
     if (onuToManage) {
@@ -191,27 +106,6 @@ export function OnuFinder({
     setOnuToManage(null);
   };
 
-  const handleAddOnu = () => {
-      if(!newOnuId || !newOnuShelf) {
-          alert("Por favor completa ambos campos.");
-          return;
-      }
-      const addedDate = new Date().toISOString();
-      const newOnu: OnuData = {
-          id: newOnuId,
-          'ONU ID': newOnuId,
-          'Shelf': newOnuShelf,
-          addedDate: addedDate,
-          history: [{ action: 'created', date: addedDate, source: 'manual'}],
-          status: 'active',
-      };
-      const docRef = doc(firestore, 'onus', newOnuId);
-      setDocumentNonBlocking(docRef, newOnu, { merge: true });
-      setNewOnuId('');
-      setNewOnuShelf('');
-      setIsAddOnuOpen(false);
-  };
-
   const handleToggleSearchList = (onu: OnuData) => {
     const userDocRef = doc(firestore, 'users', userId);
     let newSearchList;
@@ -224,17 +118,18 @@ export function OnuFinder({
   };
 
   const filteredResults = useMemo(() => {
-    if (!searchTerm) return mergedOnus;
-    return mergedOnus.filter((row) => 
+    if (!searchTerm) return onus;
+    return onus.filter((row) => 
         row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, mergedOnus]);
+  }, [searchTerm, onus]);
   
   const shelves = useMemo(() => {
     const shelfMap: Record<string, OnuData[]> = {};
     if (activeView === 'activas') {
-        mergedOnus.forEach(onu => {
-            const shelf = onu.Shelf || 'Sin Estante';
+        const activeOnus = onus.filter(o => o.status === 'active');
+        activeOnus.forEach(onu => {
+            const shelf = onu.shelfName || 'Sin Estante';
             if (!shelfMap[shelf]) {
                 shelfMap[shelf] = [];
             }
@@ -242,7 +137,7 @@ export function OnuFinder({
         });
     }
     return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [mergedOnus, activeView]);
+  }, [onus, activeView]);
 
   
   const formatDate = (dateString: string | undefined) => {
@@ -257,7 +152,7 @@ export function OnuFinder({
   const getHistoryIcon = (action: OnuHistoryEntry['action']) => {
     switch (action) {
       case 'created': return <PackagePlus className="h-4 w-4 text-green-500" />;
-      case 'added': return <FileDown className="h-4 w-4 text-blue-500" />;
+      case 'added': return <PackagePlus className="h-4 w-4 text-blue-500" />; // Re-using icon
       case 'removed': return <Trash2 className="h-4 w-4 text-red-500" />;
       case 'restored': return <Repeat className="h-4 w-4 text-yellow-500" />;
       default: return <History className="h-4 w-4 text-muted-foreground" />;
@@ -267,7 +162,7 @@ export function OnuFinder({
   const getHistoryMessage = (entry: OnuHistoryEntry) => {
     switch (entry.action) {
       case 'created': return `Creada manualmente`;
-      case 'added': return `Agregada desde archivo`;
+      case 'added': return `Agregada al inventario`;
       case 'removed': return `Retirada del inventario`;
       case 'restored': return `Devuelta al inventario`;
       default: return `Acción desconocida`;
@@ -332,7 +227,7 @@ export function OnuFinder({
             <p className="flex items-center font-medium">
               <Server className="mr-2 h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground mr-2">Estante:</span> 
-              <span className={`font-bold text-foreground ${isExactMatch ? 'text-lg' : ''}`}>{row.Shelf}</span>
+              <span className={`font-bold text-foreground ${isExactMatch ? 'text-lg' : ''}`}>{row.shelfName}</span>
             </p>
             <p className="flex items-center font-medium">
               <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
@@ -436,175 +331,75 @@ export function OnuFinder({
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
                 <p className="text-muted-foreground">
-                  No hay ONUs activas para mostrar. {profile?.isAdmin ? "Puedes cargar un archivo para empezar." : "Espera a que un administrador cargue los datos."}
+                  No hay ONUs activas para mostrar. {profile?.isAdmin ? "Ve a 'Cargar Stock' para empezar." : "Espera a que un administrador cargue los datos."}
                 </p>
             </div>
         )}
     </div>
   );
 
-  const renderRemovedList = () => (
+  const renderRemovedList = () => {
+    const removedOnus = filteredResults.filter(o => o.status === 'removed');
+      return (
       <div className="space-y-4">
-        {filteredResults && filteredResults.length > 0 ? (
+        {removedOnus.length > 0 ? (
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-               {filteredResults.map((onu, index) => renderOnuCard(onu, index))}
+               {removedOnus.map((onu, index) => renderOnuCard(onu, index))}
            </div>
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
                 <p className="text-muted-foreground">
                   {searchTerm 
-                    ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
+                    ? <>No se encontraron ONUs retiradas para <strong className="text-foreground">"{searchTerm}"</strong>.</>
                     : "No hay ONUs retiradas."
                   }
                 </p>
             </div>
         )}
       </div>
-  );
+    )
+  };
   
-  const showUploadCard = !fileInfo && profile?.isAdmin && !localFileName;
-
-  if (isLoadingOnus && !fileInfo && !localFileName) {
+  if (isLoadingOnus) {
     return (
-        <section className="w-full max-w-7xl mx-auto flex flex-col gap-8 justify-center items-center min-h-[calc(100vh-200px)]">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <p className="text-muted-foreground">Cargando datos del inventario...</p>
+        <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
+            <div className="space-y-4">
+                <Skeleton className="h-10 w-1/3" />
+                <Skeleton className="h-6 w-2/3" />
+            </div>
+            <Card>
+                <CardHeader>
+                    <Skeleton className="h-8 w-1/4" />
+                    <Skeleton className="h-6 w-1/2" />
+                </CardHeader>
+                <CardContent>
+                    <Skeleton className="h-10 w-1/2" />
+                </CardContent>
+            </Card>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+                {[...Array(8)].map((_, i) => ( 
+                  <Skeleton key={i} className="h-48 w-full" />
+                ))}
+            </div>
         </section>
     );
   }
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
-      {showUploadCard ? (
-        <Card className="text-center max-w-xl mx-auto">
-          <CardHeader>
-            <div className="mx-auto bg-secondary p-3 rounded-full w-fit">
-              <Upload className="h-8 w-8 text-primary" />
-            </div>
-            <CardTitle className="font-headline mt-4">Importar Hoja de Cálculo</CardTitle>
-            <CardDescription>
-              Sube tu archivo de Excel a la nube para que sea usado por todos o carga uno local para una sesión temporal.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-                {error && (
-                    <Alert variant="destructive">
-                        <AlertTriangle className="h-4 w-4" />
-                        <AlertTitle>Error</AlertTitle>
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                )}
-                <div className="flex flex-col items-center gap-4">
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleCloudUpload}
-                        className="hidden"
-                        accept=".xlsx, .xls, .csv"
-                    />
-                    <Button onClick={() => fileInputRef.current?.click()}>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir a la Nube
-                    </Button>
-                    <input
-                        type="file"
-                        ref={localFileInputRef}
-                        onChange={handleLocalUpload}
-                        className="hidden"
-                        accept=".xlsx, .xls, .csv"
-                    />
-                     <Button variant="outline" onClick={() => localFileInputRef.current?.click()}>
-                        <File className="mr-2 h-4 w-4" />
-                        Cargar Archivo Local
-                    </Button>
-                </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
          <div className="space-y-4">
             <div className="flex justify-between items-start gap-4 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2">
                         <h2 className="text-2xl font-headline font-semibold">
-                            {activeView === 'activas' ? `Inventario de ONUs Activas (${mergedOnus.length})` : `ONUs Retiradas (${mergedOnus.length})`}
+                            {activeView === 'activas' ? `Inventario de ONUs Activas (${onus.filter(o => o.status === 'active').length})` : `ONUs Retiradas (${onus.filter(o => o.status === 'removed').length})`}
                         </h2>
                     </div>
                     <p className="text-muted-foreground text-sm mt-1">
                         {activeView === 'activas' ? 'Visualiza y gestiona las ONUs disponibles en los estantes.' : 'Consulta el historial de ONUs que han sido retiradas.'}
                     </p>
                 </div>
-                {profile?.isAdmin && (
-                  <div className="flex gap-2">
-                      <Dialog open={isAddOnuOpen} onOpenChange={setIsAddOnuOpen}>
-                          <DialogTrigger asChild>
-                              <Button variant="outline">
-                                  <PlusCircle className="mr-2 h-4 w-4" />
-                                  Agregar ONU
-                              </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                              <DialogHeader>
-                                  <DialogTitle>Agregar Nueva ONU/STB</DialogTitle>
-                                  <DialogDescription>
-                                    Esta acción la agregará a Firestore, pero para que aparezca en la lista principal, debes actualizar y volver a subir el archivo de Excel.
-                                  </DialogDescription>
-                              </DialogHeader>
-                              <div className="grid gap-4 py-4">
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                      <Label htmlFor="new-onu-id" className="text-right">ID de ONU</Label>
-                                      <Input id="new-onu-id" value={newOnuId} onChange={(e) => setNewOnuId(e.target.value)} className="col-span-3" placeholder="Ej: 2430011054007532" />
-                                  </div>
-                                  <div className="grid grid-cols-4 items-center gap-4">
-                                      <Label htmlFor="new-onu-shelf" className="text-right">Estante</Label>
-                                      <Select value={newOnuShelf} onValueChange={setNewOnuShelf}>
-                                        <SelectTrigger className="col-span-3">
-                                          <SelectValue placeholder="Selecciona un estante" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {allShelves.map(shelf => (
-                                            <SelectItem key={shelf} value={shelf}>{shelf}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                  </div>
-                              </div>
-                              <DialogFooter>
-                                  <DialogClose asChild>
-                                    <Button variant="outline">Cancelar</Button>
-                                  </DialogClose>
-                                  <Button onClick={handleAddOnu}>Guardar ONU</Button>
-                              </DialogFooter>
-                          </DialogContent>
-                      </Dialog>
-                       <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleCloudUpload}
-                        className="hidden"
-                        accept=".xlsx, .xls, .csv"
-                    />
-                    <Button onClick={() => fileInputRef.current?.click()}>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Subir a la Nube
-                    </Button>
-                  </div>
-                )}
             </div>
-
-             {localFileName ? (
-                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm bg-yellow-100 border border-yellow-300 text-yellow-800 p-2 rounded-md">
-                    <p>Archivo local en uso: <span className="font-medium">{localFileName}</span></p>
-                    <Button variant="ghost" size="sm" className="text-yellow-800 hover:bg-yellow-200" onClick={clearLocalFile}>
-                        <XCircle className="mr-2 h-4 w-4" />
-                        Limpiar archivo local
-                    </Button>
-                </div>
-            ) : fileInfo?.fileName && (
-                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
-                    <p className="text-muted-foreground">Archivo en la nube: <span className="font-medium text-foreground">{fileInfo.fileName}</span></p>
-                </div>
-            )}
          </div>
 
          <Card>
@@ -614,13 +409,13 @@ export function OnuFinder({
             </CardHeader>
             <CardContent>
               <div className="max-w-xl">
-                <Label htmlFor="search-term">ID de la ONU</Label>
+                <Label htmlFor="search-term">ID de la ONU/STB</Label>
                 <div className="relative mt-2">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${mergedOnus?.length || 0} ONUs...`}
+                    placeholder={`Buscar entre ${onus?.length || 0} dispositivos...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -635,7 +430,7 @@ export function OnuFinder({
          </Card>
           
         <div className="mt-6">
-            {isPending || isLoadingOnus ? (
+            {isPending ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
                     {[...Array(8)].map((_, i) => ( 
                       <Skeleton key={i} className="h-48 w-full" />
@@ -651,8 +446,6 @@ export function OnuFinder({
               </>
             )}
         </div>
-        </>
-      )}
 
       {/* Confirmation Dialogs */}
       <AlertDialog open={isConfirmRetireOpen} onOpenChange={setIsConfirmRetireOpen}>
@@ -660,7 +453,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción marcará la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirada en la base de datos de historial. No se eliminará del archivo de Excel.
+              Esta acción marcará el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -677,7 +470,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Confirmar devolución?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción devolverá la ONU <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activas.
+              Esta acción devolverá el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

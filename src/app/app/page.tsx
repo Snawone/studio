@@ -2,136 +2,37 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { collection, doc } from 'firebase/firestore';
+import { collection, query, orderBy } from 'firebase/firestore';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset, SidebarTrigger, SidebarFooter } from '@/components/ui/sidebar';
 import { OnuFinder } from '@/components/onu-finder';
 import { Icons } from '@/components/icons';
-import { Boxes, Trash2, Settings, History, SearchCheck, Loader2, LogOut } from 'lucide-react';
+import { Boxes, Trash2, Settings, History, SearchCheck, Loader2, LogOut, PackagePlus } from 'lucide-react';
 import { OptionsPage } from '@/components/options-page';
 import { HistoryPage } from '@/components/history-page';
 import { SearchListPage } from '@/components/search-list-page';
+import { StockManagementPage } from '@/components/stock-management-page';
 import { useCollection, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
-import { type OnuData, type UserProfile, type FileInfo, type OnuFromSheet } from '@/lib/data';
+import { type OnuData, type UserProfile } from '@/lib/data';
 import { Button } from '@/components/ui/button';
-import { getStorage, ref, getBytes } from "firebase/storage";
-import * as XLSX from "xlsx";
+
+type ViewType = 'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda' | 'cargar-stock';
 
 export default function AppPage() {
-  const [activeView, setActiveView] = useState<'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda'>('activas');
+  const [activeView, setActiveView] = useState<ViewType>('activas');
   
   const { user, profile, isAuthLoading, logout } = useAuthContext();
   const firestore = useFirestore();
-  const storage = getStorage();
 
-  // Local file state
-  const [onusFromLocalFile, setOnusFromLocalFile] = useState<OnuFromSheet[]>([]);
-  const [localFileName, setLocalFileName] = useState<string | null>(null);
+  const onusCollectionRef = useMemoFirebase(() => query(collection(firestore, 'onus'), orderBy('addedDate', 'desc')), [firestore]);
+  const { data: allOnus, isLoading: isOnusLoading } = useCollection<OnuData>(onusCollectionRef);
 
-  // Cloud file state
-  const [onusFromCloudSheet, setOnusFromCloudSheet] = useState<OnuFromSheet[]>([]);
+  const searchListOnus = useMemo(() => {
+    if (!profile || !allOnus) return [];
+    return allOnus.filter(onu => profile.searchList.includes(onu.id));
+  }, [allOnus, profile]);
 
-  const onusCollectionRef = useMemoFirebase(() => collection(firestore, 'onus'), [firestore]);
-  const { data: allOnusFromFirestore, isLoading: isOnusLoading } = useCollection<OnuData>(onusCollectionRef);
-
-  const fileInfoDocRef = useMemoFirebase(() => doc(firestore, 'settings', 'fileInfo'), [firestore]);
-  const { data: fileInfo, isLoading: isFileInfoLoading } = useDoc<FileInfo>(fileInfoDocRef);
-
-  const processExcel = (arrayBuffer: ArrayBuffer, sheetName?: string) => {
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-    const targetSheetName = sheetName || workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[targetSheetName];
-    const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-
-    if (jsonData.length < 2) {
-      throw new Error('La hoja de cálculo está vacía o tiene un formato incorrecto.');
-    }
-
-    const headers = jsonData[0].map(h => String(h || '').trim());
-    const allOnus: OnuFromSheet[] = [];
-
-    for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-        const shelf = headers[colIndex];
-        if (shelf) {
-            for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
-                const row = jsonData[rowIndex];
-                if(row) {
-                    const onuId = row[colIndex];
-                    if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
-                        allOnus.push({
-                            'ONU ID': String(onuId),
-                            'Shelf': shelf,
-                        });
-                    }
-                }
-            }
-        }
-    }
-    return allOnus;
-  }
-
-  useEffect(() => {
-    const fetchAndProcessFile = async () => {
-      if (localFileName) {
-        setOnusFromCloudSheet([]); // Ensure cloud sheet data is cleared if local is used
-        return;
-      }
-      if (!fileInfo || !fileInfo.fileUrl) {
-        setOnusFromCloudSheet([]);
-        return;
-      }
-
-      try {
-        const storageRef = ref(storage, fileInfo.fileUrl);
-        const arrayBuffer = await getBytes(storageRef);
-        const jsonData = processExcel(arrayBuffer, fileInfo.sheetName);
-        setOnusFromCloudSheet(jsonData);
-      } catch (err: any) {
-        console.error("Error fetching or processing cloud file:", err);
-        setOnusFromCloudSheet([]);
-      }
-    };
-    
-    fetchAndProcessFile();
-  }, [fileInfo, storage, localFileName]);
-
-
-  const { mergedOnus, searchListOnus, allShelves } = useMemo(() => {
-    const onusToProcess = allOnusFromFirestore || [];
-    const sourceSheet = localFileName ? onusFromLocalFile : onusFromCloudSheet;
-
-    let combined: OnuData[];
-
-    if (sourceSheet.length > 0) {
-        const firestoreMap = new Map(onusToProcess.map(onu => [onu.id, onu]));
-        combined = sourceSheet.map(sheetOnu => {
-            const firestoreData = firestoreMap.get(sheetOnu['ONU ID']);
-            return {
-                id: sheetOnu['ONU ID'],
-                'ONU ID': sheetOnu['ONU ID'],
-                'Shelf': sheetOnu['Shelf'],
-                status: firestoreData?.status || 'active',
-                addedDate: firestoreData?.addedDate || new Date().toISOString(),
-                removedDate: firestoreData?.removedDate,
-                history: firestoreData?.history || [],
-            };
-        });
-    } else {
-        combined = onusToProcess;
-    }
-    
-    const active = combined.filter(onu => onu.status === 'active');
-    const shelves = Array.from(new Set(active.map(onu => onu.Shelf))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-    const search = profile ? combined.filter(onu => profile.searchList.includes(onu.id)) : [];
-    
-    return { mergedOnus: combined, searchListOnus: search, allShelves: shelves };
-  }, [allOnusFromFirestore, onusFromCloudSheet, onusFromLocalFile, localFileName, profile]);
-
-
-  const activeOnus = useMemo(() => mergedOnus.filter(onu => onu.status === 'active'), [mergedOnus]);
-  const removedOnus = useMemo(() => mergedOnus.filter(onu => onu.status === 'removed'), [mergedOnus]);
-
-  if (isAuthLoading || !user || !profile || isFileInfoLoading) {
+  if (isAuthLoading || !user || !profile) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -142,61 +43,39 @@ export default function AppPage() {
 
 
   const renderActiveView = () => {
+    const commonProps = {
+      onus: allOnus || [],
+      searchList: profile.searchList || [],
+      userId: user.uid,
+      isLoadingOnus: isOnusLoading,
+    };
     switch (activeView) {
       case 'activas':
         return <OnuFinder 
                   activeView="activas" 
-                  onusFromFirestore={activeOnus} 
-                  searchList={profile.searchList}
-                  allShelves={allShelves}
-                  userId={user.uid}
-                  fileInfo={fileInfo}
-                  isLoadingOnus={isOnusLoading}
-                  onusFromLocalFile={onusFromLocalFile}
-                  setOnusFromLocalFile={setOnusFromLocalFile}
-                  localFileName={localFileName}
-                  setLocalFileName={setLocalFileName}
-                  processExcel={processExcel}
+                  {...commonProps}
                 />;
       case 'retiradas':
         return <OnuFinder 
                   activeView="retiradas" 
-                  onusFromFirestore={removedOnus} 
-                  searchList={profile.searchList}
-                  allShelves={allShelves}
-                  userId={user.uid}
-                  fileInfo={fileInfo}
-                  isLoadingOnus={isOnusLoading}
-                  onusFromLocalFile={onusFromLocalFile}
-                  setOnusFromLocalFile={setOnusFromLocalFile}
-                  localFileName={localFileName}
-                  setLocalFileName={setLocalFileName}
-                  processExcel={processExcel}
+                  {...commonProps}
                 />;
+      case 'cargar-stock':
+        return <StockManagementPage />;
       case 'opciones':
         return <OptionsPage />;
       case 'historial':
-        return <HistoryPage allOnus={mergedOnus} />;
+        return <HistoryPage allOnus={allOnus || []} />;
       case 'en-busqueda':
         return <SearchListPage 
                   searchListOnus={searchListOnus}
-                  searchListIds={profile.searchList}
+                  searchListIds={profile.searchList || []}
                   userId={user.uid}
                 />;
       default:
         return <OnuFinder 
                   activeView="activas" 
-                  onusFromFirestore={activeOnus} 
-                  searchList={profile.searchList}
-                  allShelves={allShelves}
-                  userId={user.uid}
-                  fileInfo={fileInfo}
-                  isLoadingOnus={isOnusLoading}
-                  onusFromLocalFile={onusFromLocalFile}
-                  setOnusFromLocalFile={setOnusFromLocalFile}
-                  localFileName={localFileName}
-                  setLocalFileName={setLocalFileName}
-                  processExcel={processExcel}
+                  {...commonProps}
                 />;
     }
   }
@@ -238,6 +117,14 @@ export default function AppPage() {
                 Historial
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {profile.isAdmin && (
+              <SidebarMenuItem>
+                  <SidebarMenuButton onClick={() => setActiveView('cargar-stock')} isActive={activeView === 'cargar-stock'} tooltip='Cargar Stock'>
+                      <PackagePlus />
+                      Cargar Stock
+                  </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => setActiveView('opciones')} isActive={activeView === 'opciones'} tooltip='Opciones'>
                     <Settings />

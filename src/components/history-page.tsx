@@ -19,15 +19,17 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
 
   const filteredOnus = useMemo(() => {
     if (!allOnus) return [];
-    if (!searchTerm) {
-      return [...allOnus].sort((a, b) => {
+    const sorted = [...allOnus].sort((a, b) => {
         const lastEventA = a.history?.[a.history.length - 1]?.date;
         const lastEventB = b.history?.[b.history.length - 1]?.date;
         if (!lastEventA || !lastEventB) return 0;
         return new Date(lastEventB).getTime() - new Date(lastEventA).getTime();
       });
+
+    if (!searchTerm) {
+      return sorted;
     }
-    return allOnus.filter(onu =>
+    return sorted.filter(onu =>
       onu['ONU ID'].toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [allOnus, searchTerm]);
@@ -44,7 +46,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
   const getHistoryIcon = (action: OnuHistoryEntry['action']) => {
     switch (action) {
       case 'created': return <PackagePlus className="h-5 w-5 text-green-500" />;
-      case 'added': return <FileDown className="h-5 w-5 text-blue-500" />;
+      case 'added': return <PackagePlus className="h-5 w-5 text-blue-500" />;
       case 'removed': return <Trash2 className="h-5 w-5 text-red-500" />;
       case 'restored': return <Repeat className="h-5 w-5 text-yellow-500" />;
       default: return <History className="h-5 w-5 text-muted-foreground" />;
@@ -53,10 +55,10 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
 
   const getHistoryMessage = (entry: OnuHistoryEntry, onu: OnuData) => {
     switch (entry.action) {
-      case 'created': return `ONU creada manualmente en estante ${onu.Shelf}.`;
-      case 'added': return `ONU agregada desde archivo en estante ${onu.Shelf}.`;
-      case 'removed': return `ONU retirada del inventario.`;
-      case 'restored': return `ONU devuelta al estante ${onu.Shelf}.`;
+      case 'created': return `Dispositivo creado manualmente en estante ${onu.shelfName}.`;
+      case 'added': return `Dispositivo agregado en estante ${onu.shelfName}.`;
+      case 'removed': return `Dispositivo retirado del inventario.`;
+      case 'restored': return `Dispositivo devuelto al estante ${onu.shelfName}.`;
       default: return `Acción desconocida`;
     }
   };
@@ -69,13 +71,13 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
           Historial de Dispositivos
         </h2>
         <p className="text-muted-foreground text-sm">
-          Busca y visualiza el ciclo de vida completo de cada ONU en el inventario.
+          Busca y visualiza el ciclo de vida completo de cada dispositivo en el inventario.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Buscar ONU por ID</CardTitle>
+          <CardTitle>Buscar Dispositivo por ID</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="max-w-xl">
@@ -84,7 +86,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
               <Input
                 id="search-term"
                 type="text"
-                placeholder={`Buscar entre ${allOnus?.length || 0} ONUs...`}
+                placeholder={`Buscar entre ${allOnus?.length || 0} dispositivos...`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 w-full"
@@ -107,7 +109,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
                   <CardDescription className="flex items-center gap-4 mt-2">
                      <span className="flex items-center gap-2">
                         <Server className="h-4 w-4" />
-                        <span className="font-medium">{onu.Shelf}</span>
+                        <span className="font-medium">{onu.shelfName}</span>
                      </span>
                      {onu.status === 'removed' ? (
                         <Badge variant="destructive">Retirada</Badge>
@@ -132,7 +134,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No hay historial para esta ONU.</p>
+                  <p className="text-sm text-muted-foreground">No hay historial para este dispositivo.</p>
                 )}
               </CardContent>
             </Card>
@@ -141,12 +143,12 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
           <div className="text-center py-16 border-2 border-dashed rounded-lg">
             <Package className="h-12 w-12 mx-auto text-muted-foreground" />
             <h3 className="mt-4 text-lg font-medium">
-              {searchTerm ? 'No se encontraron ONUs' : 'No hay dispositivos'}
+              {searchTerm ? 'No se encontraron dispositivos' : 'No hay dispositivos'}
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {searchTerm
                 ? `No se encontraron resultados para "${searchTerm}".`
-                : 'Cuando cargues un archivo, el historial aparecerá aquí.'}
+                : "Cuando se agregue stock, el historial aparecerá aquí."}
             </p>
           </div>
         )}

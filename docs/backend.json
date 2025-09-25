@@ -1,31 +1,32 @@
+
 {
   "entities": {
     "Onu": {
       "title": "Onu",
       "type": "object",
-      "description": "Represents an Optical Network Unit (ONU) and its location within the shelving system.",
+      "description": "Represents an Optical Network Unit (ONU) or Set-Top Box (STB).",
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the ONU entity, typically the serial number."
+          "description": "Unique identifier for the device, typically the serial number."
         },
-        "serialNumber": {
+        "shelfId": {
           "type": "string",
-          "description": "The serial number of the ONU."
+          "description": "The ID of the shelf where the device is located."
         },
-        "shelfLocation": {
+        "shelfName": {
           "type": "string",
-          "description": "The location of the ONU on the shelf (e.g., A1-2, B3-5)."
+          "description": "Denormalized name of the shelf for easier querying and display."
         },
         "addedDate": {
           "type": "string",
           "format": "date-time",
-          "description": "The date the ONU was added to the inventory."
+          "description": "The date the device was added to the inventory."
         },
         "removedDate": {
           "type": "string",
           "format": "date-time",
-          "description": "The date the ONU was removed from the inventory."
+          "description": "The date the device was removed from the inventory."
         },
         "status": {
           "type": "string",
@@ -33,7 +34,7 @@
             "active",
             "removed"
           ],
-          "description": "The current status of the ONU."
+          "description": "The current status of the device."
         },
         "history": {
           "type": "array",
@@ -56,7 +57,6 @@
               "source": {
                 "type": "string",
                 "enum": [
-                  "file",
                   "manual"
                 ]
               }
@@ -66,9 +66,46 @@
       },
       "required": [
         "id",
-        "serialNumber",
-        "shelfLocation",
-        "status"
+        "shelfId",
+        "shelfName",
+        "status",
+        "addedDate"
+      ]
+    },
+    "Shelf": {
+      "title": "Shelf",
+      "description": "Represents a physical shelf that holds ONUs or STBs.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The unique name or identifier for the shelf (e.g., A1-RACK1)."
+        },
+        "capacity": {
+          "type": "number",
+          "description": "The maximum number of devices this shelf can hold."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["onu", "stb"],
+          "description": "The type of device this shelf is intended for."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the shelf was created."
+        },
+        "itemCount": {
+          "type": "number",
+          "description": "The current number of devices on the shelf."
+        }
+      },
+      "required": [
+        "name",
+        "capacity",
+        "type",
+        "createdAt",
+        "itemCount"
       ]
     },
     "UserProfile": {
@@ -118,11 +155,27 @@
           "schema": {
             "$ref": "#/entities/Onu"
           },
-          "description": "Global collection of all ONUs.",
+          "description": "Global collection of all ONUs and STBs.",
           "params": [
             {
               "name": "onuId",
-              "description": "The unique identifier of the ONU."
+              "description": "The unique identifier of the device."
+            }
+          ]
+        }
+      },
+      {
+        "path": "shelves/{shelfId}",
+        "definition": {
+          "entityName": "Shelf",
+          "schema": {
+            "$ref": "#/entities/Shelf"
+          },
+          "description": "Collection of all physical shelves.",
+          "params": [
+            {
+              "name": "shelfId",
+              "description": "The unique identifier of the shelf."
             }
           ]
         }

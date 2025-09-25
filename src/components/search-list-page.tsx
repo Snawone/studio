@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -102,7 +103,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
             Lista de Búsqueda ({searchListOnus.length})
           </h2>
           <p className="text-muted-foreground text-sm">
-            Aquí están las ONUs que has marcado. Puedes marcarlas como encontradas individualmente o todas a la vez.
+            Aquí están los dispositivos que has marcado. Puedes marcarlos como encontrados individualmente o todos a la vez.
           </p>
         </div>
         {searchListOnus.length > 0 && (
@@ -127,7 +128,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
                         <CardDescription className="flex items-center gap-4 pt-2">
                             <span className="flex items-center gap-1">
                             <Server className="h-4 w-4" />
-                            <span className="font-medium">{onu.Shelf}</span>
+                            <span className="font-medium">{onu.shelfName}</span>
                             </span>
                             {onu.status === 'removed' ? (
                             <Badge variant="destructive">Retirada</Badge>
@@ -166,6 +167,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
                     size="sm"
                     className="w-full"
                     onClick={() => setOnuToRetire(onu)}
+                    disabled={onu.status === 'removed'}
                   >
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Encontrada
@@ -179,7 +181,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
             <PackageX className="h-12 w-12 mx-auto text-muted-foreground" />
             <h3 className="mt-4 text-lg font-medium">Tu lista de búsqueda está vacía</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Añade ONUs a esta lista usando el botón "Buscar" en las vistas de activas o retiradas.
+              Añade dispositivos a esta lista usando el botón "Buscar" en las vistas de activas o retiradas.
             </p>
           </div>
         )}
@@ -191,7 +193,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar como encontrada?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá la ONU <strong className='break-all'>{onuToRetire?.['ONU ID']}</strong> a la lista de "Retiradas" y la quitará de la lista de búsqueda.
+              Esto moverá el dispositivo <strong className='break-all'>{onuToRetire?.['ONU ID']}</strong> a la lista de "Retiradas" y la quitará de la lista de búsqueda.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -209,7 +211,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar todas como encontradas?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá las {searchListOnus.length} ONUs de esta lista a "Retiradas" (si están activas) y limpiará la lista de búsqueda. ¿Estás seguro?
+              Esto moverá los {searchListOnus.filter(o => o.status === 'active').length} dispositivos activos de esta lista a "Retiradas" y limpiará la lista de búsqueda. ¿Estás seguro?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
