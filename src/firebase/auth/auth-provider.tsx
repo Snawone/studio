@@ -63,9 +63,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             router.push('/app');
           }
            setAuthLoading(false); // Fix: Set loading to false when profile is found
+        } else {
+            // If the user exists in Auth but not in Firestore, wait a bit, it might be creating.
+            // But if it's been a while, something is wrong.
+            // For now, we just keep loading. The main page should handle prolonged loading.
+            // A more robust solution might involve a timeout.
         }
-        // If the doc doesn't exist, we wait. It might be in the process of being created.
-        // The main page's loading state will handle showing a spinner.
       }, (error) => {
           console.error("Error fetching user profile:", error);
           setAuthLoading(false);
