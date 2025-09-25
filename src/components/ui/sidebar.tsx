@@ -538,7 +538,9 @@ const SidebarMenuButton = React.forwardRef<
   React.ComponentProps<"button"> & {
     asChild?: boolean
     isActive?: boolean
-    tooltip?: string | Omit<React.ComponentProps<typeof TooltipContent>, 'children'>
+    tooltip?: Omit<React.ComponentProps<typeof TooltipContent>, "children"> & {
+      children: React.ReactNode
+    }
   } & VariantProps<typeof sidebarMenuButtonVariants>
 >(
   (
@@ -571,9 +573,7 @@ const SidebarMenuButton = React.forwardRef<
       return button
     }
 
-    const tooltipContent = typeof tooltip === 'string' ? tooltip : tooltip.children;
-    const tooltipProps = typeof tooltip === 'string' ? {} : tooltip;
-
+    const { children: tooltipContent, ...tooltipProps } = tooltip
 
     return (
       <Tooltip>

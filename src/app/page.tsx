@@ -30,17 +30,19 @@ export default function Home() {
   };
 
   const renderActiveView = () => {
+    const onuFinderProps = {
+        onDataChange: handleDataChange,
+        initialData: data,
+        initialRemovedOnus: removedOnus,
+        initialSearchList: searchList,
+        onDataLoaded: setIsDataLoaded
+    };
+
     switch (activeView) {
       case 'activas':
+        return <OnuFinder {...onuFinderProps} activeView="activas" />;
       case 'retiradas':
-        return <OnuFinder 
-          activeView={activeView} 
-          onDataChange={handleDataChange}
-          initialData={data}
-          initialRemovedOnus={removedOnus}
-          initialSearchList={searchList}
-          onDataLoaded={setIsDataLoaded}
-        />;
+        return <OnuFinder {...onuFinderProps} activeView="retiradas" />;
       case 'opciones':
         return <OptionsPage />;
       case 'historial':
@@ -53,14 +55,7 @@ export default function Home() {
                   allRemovedOnus={removedOnus}
                 />;
       default:
-        return <OnuFinder 
-                  activeView="activas" 
-                  onDataChange={handleDataChange} 
-                  initialData={data}
-                  initialRemovedOnus={removedOnus}
-                  initialSearchList={searchList}
-                  onDataLoaded={setIsDataLoaded}
-                />;
+        return <OnuFinder {...onuFinderProps} activeView="activas" />;
     }
   }
 
@@ -78,31 +73,31 @@ export default function Home() {
         <SidebarContent>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => setActiveView('activas')} isActive={activeView === 'activas'} tooltip='Activas'>
+              <SidebarMenuButton onClick={() => setActiveView('activas')} isActive={activeView === 'activas'} tooltip={{children: 'Activas'}}>
                 <Boxes />
                 Activas
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => setActiveView('retiradas')} isActive={activeView === 'retiradas'} tooltip='Retiradas'>
+              <SidebarMenuButton onClick={() => setActiveView('retiradas')} isActive={activeView === 'retiradas'} tooltip={{children: 'Retiradas'}}>
                 <Trash2 />
                 Retiradas
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => setActiveView('en-busqueda')} isActive={activeView === 'en-busqueda'} tooltip='En Búsqueda'>
+              <SidebarMenuButton onClick={() => setActiveView('en-busqueda')} isActive={activeView === 'en-busqueda'} tooltip={{children: 'En Búsqueda'}}>
                 <SearchCheck />
                 En Búsqueda
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => setActiveView('historial')} isActive={activeView === 'historial'} tooltip='Historial'>
+              <SidebarMenuButton onClick={() => setActiveView('historial')} isActive={activeView === 'historial'} tooltip={{children: 'Historial'}}>
                 <History />
                 Historial
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => setActiveView('opciones')} isActive={activeView === 'opciones'} tooltip='Opciones'>
+                <SidebarMenuButton onClick={() => setActiveView('opciones')} isActive={activeView === 'opciones'} tooltip={{children: 'Opciones'}}>
                     <Settings />
                     Opciones
                 </SidebarMenuButton>
