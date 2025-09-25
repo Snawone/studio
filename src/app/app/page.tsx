@@ -12,7 +12,7 @@ import { HistoryPage } from '@/components/history-page';
 import { SearchListPage } from '@/components/search-list-page';
 import { useCollection, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
-import { type OnuData, type UserProfile } from '@/lib/data';
+import { type OnuData, type UserProfile, type FileInfo } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 
 export default function AppPage() {
@@ -24,6 +24,9 @@ export default function AppPage() {
   const onusCollectionRef = useMemoFirebase(() => collection(firestore, 'onus'), [firestore]);
   const { data: allOnus, isLoading: isOnusLoading } = useCollection<OnuData>(onusCollectionRef);
 
+  const fileInfoDocRef = useMemoFirebase(() => doc(firestore, 'settings', 'fileInfo'), [firestore]);
+  const { data: fileInfo, isLoading: isFileInfoLoading } = useDoc<FileInfo>(fileInfoDocRef);
+
   const { activeOnus, removedOnus, searchListOnus, allShelves } = useMemo(() => {
     if (!allOnus) {
       return { activeOnus: [], removedOnus: [], searchListOnus: [], allShelves: [] };
@@ -31,11 +34,11 @@ export default function AppPage() {
     const active = allOnus.filter(onu => onu.status === 'active');
     const removed = allOnus.filter(onu => onu.status === 'removed');
     const search = profile ? allOnus.filter(onu => profile.searchList.includes(onu.id)) : [];
-    const shelves = Array.from(new Set(active.map(onu => onu.shelfLocation))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const shelves = Array.from(new Set(active.map(onu => onu.Shelf))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
     return { activeOnus: active, removedOnus: removed, searchListOnus: search, allShelves: shelves };
   }, [allOnus, profile]);
 
-  if (isAuthLoading || !user || !profile || isOnusLoading) {
+  if (isAuthLoading || !user || !profile || isOnusLoading || isFileInfoLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -54,6 +57,7 @@ export default function AppPage() {
                   searchList={profile.searchList}
                   allShelves={allShelves}
                   userId={user.uid}
+                  fileInfo={fileInfo}
                 />;
       case 'retiradas':
         return <OnuFinder 
@@ -62,6 +66,7 @@ export default function AppPage() {
                   searchList={profile.searchList}
                   allShelves={allShelves}
                   userId={user.uid}
+                  fileInfo={fileInfo}
                 />;
       case 'opciones':
         return <OptionsPage />;
@@ -80,6 +85,7 @@ export default function AppPage() {
                   searchList={profile.searchList}
                   allShelves={allShelves}
                   userId={user.uid}
+                  fileInfo={fileInfo}
                 />;
     }
   }

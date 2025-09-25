@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useTransition, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { type OnuData, type OnuHistoryEntry } from "@/lib/data";
+import { type OnuData, type OnuHistoryEntry, type FileInfo } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -60,6 +60,7 @@ type OnuFinderProps = {
     searchList: string[];
     allShelves: string[];
     userId: string;
+    fileInfo: FileInfo | null;
 }
 
 export function OnuFinder({ 
@@ -67,17 +68,15 @@ export function OnuFinder({
   onus,
   searchList,
   allShelves,
-  userId
+  userId,
+  fileInfo
 }: OnuFinderProps) {
   const firestore = useFirestore();
   const { profile } = useAuthContext();
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
   
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
-  const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
 
-  const [fileName, setFileName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,21 +95,13 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   useEffect(() => {
-    // This effect now simply marks hydration as complete.
-    // The presence of `onus` data is handled by the loading state.
     setIsHydrating(false);
-  }, []);
-
-  useEffect(() => {
-    // This effect handles the data loaded state based on the `onus` prop.
-    // We only set it to true once, when data first arrives.
-    if (onus && onus.length > 0 && !isDataLoaded) {
-      setIsDataLoaded(true);
+    if(fileInfo?.sheetNames && fileInfo.sheetNames.length > 0) {
+      setSelectedSheet(fileInfo.sheetNames[0]);
     }
-  }, [onus, isDataLoaded]);
+  }, [fileInfo]);
 
-
-  const parseAndUploadSheetData = async (wb: XLSX.WorkBook, sheetName: string) => {
+  const parseAndUploadSheetData = async (wb: XLSX.WorkBook, sheetName: string, fileName: string) => {
     try {
         setIsLoading(true);
         const worksheet = wb.Sheets[sheetName];
@@ -150,8 +141,15 @@ export function OnuFinder({
             }
         }
         
+        const fileInfoRef = doc(firestore, 'settings', 'fileInfo');
+        const newFileInfo: FileInfo = {
+            fileName: fileName,
+            sheetNames: wb.SheetNames,
+            lastUpdated: fileProcessDate
+        };
+        batch.set(fileInfoRef, newFileInfo);
+        
         await batch.commit();
-        setIsDataLoaded(true);
 
     } catch (err: any) {
         setError(err.message || `Error al procesar la hoja "${sheetName}".`);
@@ -168,11 +166,9 @@ export function OnuFinder({
         const firstSheet = sheets[0];
 
         setWorkbook(wb);
-        setSheetNames(sheets);
-        setFileName(file.name);
         setSelectedSheet(firstSheet);
         
-        parseAndUploadSheetData(wb, firstSheet);
+        parseAndUploadSheetData(wb, firstSheet, file.name);
         setError(null);
         
     } catch (err: any) {
@@ -506,7 +502,7 @@ export function OnuFinder({
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
                 <p className="text-muted-foreground">
-                  No hay ONUs activas para mostrar. El administrador puede cargar un archivo.
+                  No hay ONUs activas para mostrar. {profile?.isAdmin ? "Puedes cargar un archivo para empezar." : "Espera a que un administrador cargue los datos."}
                 </p>
             </div>
         )}
@@ -541,7 +537,7 @@ export function OnuFinder({
     );
   }
 
-  const showUploadCard = !isDataLoaded && profile?.isAdmin;
+  const showUploadCard = !fileInfo && profile?.isAdmin;
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
@@ -670,23 +666,23 @@ export function OnuFinder({
                   </div>
                 )}
             </div>
-            {fileName && profile?.isAdmin && (
+            {fileInfo?.fileName && profile?.isAdmin && (
                 <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
-                    <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileName}</span></p>
-                    {sheetNames.length > 1 && (
+                    <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileInfo.fileName}</span></p>
+                    {fileInfo.sheetNames.length > 1 && (
                         <div className="flex items-center gap-2 mt-2 sm:mt-0">
                             <Label htmlFor="sheet-selector" className="text-muted-foreground">Hoja:</Label>
                             <Select value={selectedSheet} onValueChange={(newSheet) => {
                                 setSelectedSheet(newSheet);
                                 if (workbook) {
-                                    parseAndUploadSheetData(workbook, newSheet);
+                                    parseAndUploadSheetData(workbook, newSheet, fileInfo.fileName);
                                 }
                             }}>
                                 <SelectTrigger id="sheet-selector" className="h-8 w-auto max-w-[200px]">
                                     <SelectValue placeholder="Selecciona una hoja" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {sheetNames.map(name => (
+                                    {fileInfo.sheetNames.map(name => (
                                         <SelectItem key={name} value={name}>{name}</SelectItem>
                                     ))}
                                 </SelectContent>

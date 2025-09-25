@@ -23,3 +23,9 @@ export type UserProfile = {
   searchList: string[];
   isAdmin?: boolean;
 }
+
+export type FileInfo = {
+  fileName: string;
+  sheetNames: string[];
+  lastUpdated: string;
+}
