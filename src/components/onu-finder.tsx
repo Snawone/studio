@@ -215,8 +215,10 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
         }
         localStorage.setItem('onuFileName', file.name);
         localStorage.setItem('onuSelectedSheet', firstSheet);
-        localStorage.removeItem(`onuData_${firstSheet}`);
-        localStorage.removeItem(`onuRemovedData_${firstSheet}`);
+        sheetNames.forEach(sheet => {
+            localStorage.removeItem(`onuData_${sheet}`);
+            localStorage.removeItem(`onuRemovedData_${sheet}`);
+        });
 
     } catch (err: any) {
         setError(err.message || 'Error al procesar el archivo. Asegúrate que sea un archivo Excel válido con el formato correcto.');
@@ -374,65 +376,81 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     }
   };
 
-  const renderOnuCard = (row: OnuData, index: number, isRetired = false) => (
-    <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className="group flex flex-col justify-between">
-      <div>
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center text-base text-primary break-all">
-            <Tag className="mr-2 h-4 w-4 flex-shrink-0"/>
-            {row['ONU ID']}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2 text-sm">
-          <p className="flex items-center font-medium">
-            <Server className="mr-2 h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground mr-2">Estante:</span> 
-            <span className="font-bold text-foreground">{row.Shelf}</span>
-          </p>
-          <p className="flex items-center font-medium">
-            <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-            <span className="text-muted-foreground mr-2">Agregada:</span> 
-            <span className="text-foreground">{formatDate(row.addedDate)}</span>
-          </p>
-          {isRetired && row.removedDate && (
-             <p className="flex items-center font-medium text-destructive/80">
-                <Trash2 className="mr-2 h-4 w-4" />
-                <span className="mr-2">Retirada:</span> 
-                <span className="">{formatDate(row.removedDate)}</span>
+  const renderOnuCard = (row: OnuData, index: number, isRetired = false) => {
+    const isExactMatch = searchTerm.length > 0 && row['ONU ID'].toLowerCase() === searchTerm.toLowerCase();
+    const onuId = row['ONU ID'];
+    const idPrefix = onuId.slice(0, -6);
+    const idSuffix = onuId.slice(-6);
+  
+    return (
+      <Card key={`${row.Shelf}-${row['ONU ID']}-${index}`} className="group flex flex-col justify-between">
+        <div>
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-start text-base text-primary break-all">
+              <Tag className="mr-2 h-4 w-4 flex-shrink-0 mt-1"/>
+              <div>
+                {isExactMatch ? (
+                  <>
+                    <span>{idPrefix}</span>
+                    <span className="font-bold text-lg">{idSuffix}</span>
+                  </>
+                ) : (
+                  onuId
+                )}
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 text-sm">
+            <p className="flex items-center font-medium">
+              <Server className="mr-2 h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground mr-2">Estante:</span> 
+              <span className={`font-bold text-foreground ${isExactMatch ? 'text-lg' : ''}`}>{row.Shelf}</span>
             </p>
+            <p className="flex items-center font-medium">
+              <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground mr-2">Agregada:</span> 
+              <span className="text-foreground">{formatDate(row.addedDate)}</span>
+            </p>
+            {isRetired && row.removedDate && (
+               <p className="flex items-center font-medium text-destructive/80">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  <span className="mr-2">Retirada:</span> 
+                  <span className="">{formatDate(row.removedDate)}</span>
+              </p>
+            )}
+          </CardContent>
+        </div>
+        <CardFooter className="p-4">
+          {isRetired ? (
+            <Button 
+              variant="outline"
+              size="sm"
+              className="w-full text-green-600 hover:text-green-700 hover:bg-green-50 border-green-600/50"
+              onClick={() => {
+                setOnuToManage(row);
+                setIsConfirmRestoreOpen(true);
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Devolver
+            </Button>
+          ) : (
+            <Button 
+              variant="outline"
+              size="sm"
+              className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
+              onClick={() => {
+                setOnuToManage(row);
+                setIsConfirmRetireOpen(true);
+              }}
+            >
+              Retirar
+            </Button>
           )}
-        </CardContent>
-      </div>
-      <CardFooter className="p-4">
-        {isRetired ? (
-          <Button 
-            variant="outline"
-            size="sm"
-            className="w-full text-green-600 hover:text-green-700 hover:bg-green-50 border-green-600/50"
-            onClick={() => {
-              setOnuToManage(row);
-              setIsConfirmRestoreOpen(true);
-            }}
-          >
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Devolver
-          </Button>
-        ) : (
-          <Button 
-            variant="outline"
-            size="sm"
-            className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
-            onClick={() => {
-              setOnuToManage(row);
-              setIsConfirmRetireOpen(true);
-            }}
-          >
-            Retirar
-          </Button>
-        )}
-      </CardFooter>
-    </Card>
-  );
+        </CardFooter>
+      </Card>
+    );
+  }
 
   const renderSearchResults = () => (
     <div className="space-y-4">
@@ -585,7 +603,9 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
             <div className="flex justify-between items-start gap-4 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2">
-                        <SidebarTrigger />
+                         <div className="md:hidden">
+                            <SidebarTrigger />
+                         </div>
                         <h2 className="text-2xl font-headline font-semibold">
                             {activeView === 'activas' ? `Inventario de ONUs Activas (${data.length})` : `ONUs Retiradas (${removedOnus.length})`}
                         </h2>
@@ -740,3 +760,5 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     </section>
   );
 }
+
+    
