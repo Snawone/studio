@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from 'react';
-import { User, onAuthStateChanged, signOut, IdTokenResult } from 'firebase/auth';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
 
 import { useAuth, useFirestore } from '@/firebase/provider';
@@ -34,14 +34,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setAuthLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
       } else {
         setUser(null);
         setProfile(null);
         setAuthLoading(false);
-        // If on a protected route, redirect to login
         if (typeof window !== 'undefined' && window.location.pathname.startsWith('/app')) {
             router.push('/');
         }
@@ -52,38 +50,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (user) {
+      setAuthLoading(true);
       const userDocRef = doc(firestore, 'users', user.uid);
-      const unsubscribe = onSnapshot(userDocRef, async (doc) => {
+      const unsubscribe = onSnapshot(userDocRef, (doc) => {
         if (doc.exists()) {
-          const token: IdTokenResult = await user.getIdTokenResult();
-          const userProfile: UserProfile = { 
-            id: doc.id,
-            ...doc.data(),
-          } as UserProfile;
-
-          // Hardcoded admin check
+          const userProfileData = { id: doc.id, ...doc.data() } as UserProfile;
           if (user.email === 'santiagowyka@gmail.com') {
-            userProfile.isAdmin = true;
+            userProfileData.isAdmin = true;
           }
-          
-          setProfile(userProfile);
-          
-          if (typeof window !== 'undefined' && window.location.pathname !== '/app') {
+          setProfile(userProfileData);
+          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/app')) {
             router.push('/app');
           }
         } else {
-          // This case can happen briefly during signup.
-          // Or if the user document was deleted.
+          // User exists in Auth, but not in Firestore. This is an invalid state.
+          // Log them out and send to login page to prevent being stuck.
+          console.error("User profile not found in Firestore. Logging out.");
+          signOut(auth);
           setProfile(null);
         }
         setAuthLoading(false);
+      }, (error) => {
+          console.error("Error fetching user profile:", error);
+          setAuthLoading(false);
+          setProfile(null);
+          signOut(auth);
       });
       return () => unsubscribe();
     } else {
-      // If there's no user, we are not loading auth data anymore.
-      setAuthLoading(false);
+        setAuthLoading(false);
     }
-  }, [user, firestore, router]);
+  }, [user, firestore, router, auth]);
 
   const logout = async () => {
     await signOut(auth);
