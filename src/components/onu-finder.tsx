@@ -45,7 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2, Calendar as CalendarIcon, Trash2, History, PackagePlus, FileDown, Repeat, SearchCheck, Check } from "lucide-react";
+import { FileSpreadsheet, Search, Upload, Server, Tag, Link, AlertTriangle, PlusCircle, RotateCcw, Loader2, Calendar as CalendarIcon, Trash2, History, PackagePlus, FileDown, Repeat, SearchCheck, Check, File, XCircle } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -83,12 +83,14 @@ export function OnuFinder({
   const { profile } = useAuthContext();
   const storage = getStorage();
   
-  const [onusFromSheet, setOnusFromSheet] = useState<OnuFromSheet[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [onusFromCloudSheet, setOnusFromCloudSheet] = useState<OnuFromSheet[]>([]);
+  const [onusFromLocalFile, setOnusFromLocalFile] = useState<OnuFromSheet[]>([]);
+  const [localFileName, setLocalFileName] = useState<string | null>(null);
 
-  const [searchTerm, setSearchTerm] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const localFileInputRef = useRef<HTMLInputElement>(null);
 
   const [newOnuId, setNewOnuId] = useState('');
   const [newOnuShelf, setNewOnuShelf] = useState('');
@@ -103,7 +105,7 @@ export function OnuFinder({
   useEffect(() => {
       const fetchAndProcessFile = async () => {
         if (!fileInfo || !fileInfo.fileUrl) {
-          setOnusFromSheet([]);
+          setOnusFromCloudSheet([]);
           return;
         }
 
@@ -111,44 +113,14 @@ export function OnuFinder({
         try {
           const storageRef = ref(storage, fileInfo.fileUrl);
           const arrayBuffer = await getBytes(storageRef);
-
-          const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-          const sheetName = fileInfo.sheetName || workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
-
-          if (jsonData.length < 2) {
-            setError('La hoja de cálculo está vacía o tiene un formato incorrecto.');
-            setOnusFromSheet([]);
-            return;
-          }
-
-          const headers = jsonData[0].map(h => String(h || '').trim());
-          const allOnus: OnuFromSheet[] = [];
-
-          for (let colIndex = 0; colIndex < headers.length; colIndex++) {
-              const shelf = headers[colIndex];
-              if (shelf) {
-                  for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
-                      const row = jsonData[rowIndex];
-                      if(row) {
-                          const onuId = row[colIndex];
-                          if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
-                              allOnus.push({
-                                  'ONU ID': String(onuId),
-                                  'Shelf': shelf,
-                              });
-                          }
-                      }
-                  }
-              }
-          }
-          setOnusFromSheet(allOnus);
+          
+          const jsonData = processExcel(arrayBuffer, fileInfo.sheetName);
+          setOnusFromCloudSheet(jsonData);
 
         } catch (err: any) {
           console.error("Error fetching or processing file:", err);
           setError(err.message || 'No se pudo obtener o procesar el archivo desde la URL.');
-          setOnusFromSheet([]);
+          setOnusFromCloudSheet([]);
         } 
       };
       
@@ -156,7 +128,42 @@ export function OnuFinder({
   }, [fileInfo, storage]);
 
 
+  const processExcel = (arrayBuffer: ArrayBuffer, sheetName?: string) => {
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const targetSheetName = sheetName || workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[targetSheetName];
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+
+      if (jsonData.length < 2) {
+        throw new Error('La hoja de cálculo está vacía o tiene un formato incorrecto.');
+      }
+
+      const headers = jsonData[0].map(h => String(h || '').trim());
+      const allOnus: OnuFromSheet[] = [];
+
+      for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+          const shelf = headers[colIndex];
+          if (shelf) {
+              for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
+                  const row = jsonData[rowIndex];
+                  if(row) {
+                      const onuId = row[colIndex];
+                      if (onuId !== null && onuId !== undefined && String(onuId).trim() !== '') {
+                          allOnus.push({
+                              'ONU ID': String(onuId),
+                              'Shelf': shelf,
+                          });
+                      }
+                  }
+              }
+          }
+      }
+      return allOnus;
+  }
+
   useEffect(() => {
+    const onusFromSheet = localFileName ? onusFromLocalFile : onusFromCloudSheet;
+    
     if (!onusFromSheet.length) {
       setMergedOnus(onusFromFirestore.filter(onu => onu.status === activeView.slice(0, -1)));
       return;
@@ -178,10 +185,10 @@ export function OnuFinder({
     });
     
     setMergedOnus(combined.filter(onu => onu.status === (activeView === 'activas' ? 'active' : 'removed')));
-  }, [onusFromSheet, onusFromFirestore, activeView]);
+  }, [onusFromCloudSheet, onusFromLocalFile, localFileName, onusFromFirestore, activeView]);
   
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCloudUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -210,6 +217,34 @@ export function OnuFinder({
       setError(err.message || 'Error al subir o procesar el archivo.');
     }
   };
+
+  const handleLocalUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setError(null);
+    setLocalFileName(null);
+    setOnusFromLocalFile([]);
+    
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const jsonData = processExcel(arrayBuffer);
+      setOnusFromLocalFile(jsonData);
+      setLocalFileName(file.name);
+    } catch (err: any) {
+      console.error("Error processing local file:", err);
+      setError(err.message || 'Error al procesar el archivo local.');
+    }
+  };
+
+  const clearLocalFile = () => {
+    setLocalFileName(null);
+    setOnusFromLocalFile([]);
+    if(localFileInputRef.current) {
+        localFileInputRef.current.value = "";
+    }
+  }
+
 
   const handleConfirmRetire = () => {
     if (onuToManage) {
@@ -510,9 +545,9 @@ export function OnuFinder({
       </div>
   );
   
-  const showUploadCard = !fileInfo && profile?.isAdmin;
+  const showUploadCard = !fileInfo && profile?.isAdmin && !localFileName;
 
-  if (isLoadingOnus && !fileInfo) {
+  if (isLoadingOnus && !fileInfo && !localFileName) {
     return (
         <section className="w-full max-w-7xl mx-auto flex flex-col gap-8 justify-center items-center min-h-[calc(100vh-200px)]">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -531,7 +566,7 @@ export function OnuFinder({
             </div>
             <CardTitle className="font-headline mt-4">Importar Hoja de Cálculo</CardTitle>
             <CardDescription>
-              Sube tu archivo de Excel para empezar a buscar tus ONUs. El archivo se guardará en la nube y será usado por todos los usuarios.
+              Sube tu archivo de Excel a la nube para que sea usado por todos o carga uno local para una sesión temporal.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
@@ -546,13 +581,24 @@ export function OnuFinder({
                     <input
                         type="file"
                         ref={fileInputRef}
-                        onChange={handleFileUpload}
+                        onChange={handleCloudUpload}
                         className="hidden"
                         accept=".xlsx, .xls, .csv"
                     />
                     <Button onClick={() => fileInputRef.current?.click()}>
-                        <FileSpreadsheet className="mr-2 h-4 w-4" />
-                        Subir Archivo
+                        <Upload className="mr-2 h-4 w-4" />
+                        Subir a la Nube
+                    </Button>
+                    <input
+                        type="file"
+                        ref={localFileInputRef}
+                        onChange={handleLocalUpload}
+                        className="hidden"
+                        accept=".xlsx, .xls, .csv"
+                    />
+                     <Button variant="outline" onClick={() => localFileInputRef.current?.click()}>
+                        <File className="mr-2 h-4 w-4" />
+                        Cargar Archivo Local
                     </Button>
                 </div>
           </CardContent>
@@ -563,7 +609,6 @@ export function OnuFinder({
             <div className="flex justify-between items-start gap-4 flex-wrap">
                 <div>
                     <div className="flex items-center gap-2">
-                         
                         <h2 className="text-2xl font-headline font-semibold">
                             {activeView === 'activas' ? `Inventario de ONUs Activas (${mergedOnus.length})` : `ONUs Retiradas (${mergedOnus.length})`}
                         </h2>
@@ -615,17 +660,32 @@ export function OnuFinder({
                               </DialogFooter>
                           </DialogContent>
                       </Dialog>
-                      <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".xlsx, .xls, .csv" />
-                      <Button onClick={() => fileInputRef.current?.click()}>
-                          <Upload className="mr-2 h-4 w-4" />
-                          Actualizar Archivo
-                      </Button>
+                       <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleCloudUpload}
+                        className="hidden"
+                        accept=".xlsx, .xls, .csv"
+                    />
+                    <Button onClick={() => fileInputRef.current?.click()}>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Subir a la Nube
+                    </Button>
                   </div>
                 )}
             </div>
-            {fileInfo?.fileName && (
+
+             {localFileName ? (
+                <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm bg-yellow-100 border border-yellow-300 text-yellow-800 p-2 rounded-md">
+                    <p>Archivo local en uso: <span className="font-medium">{localFileName}</span></p>
+                    <Button variant="ghost" size="sm" className="text-yellow-800 hover:bg-yellow-200" onClick={clearLocalFile}>
+                        <XCircle className="mr-2 h-4 w-4" />
+                        Limpiar archivo local
+                    </Button>
+                </div>
+            ) : fileInfo?.fileName && (
                 <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
-                    <p className="text-muted-foreground">Archivo de inventario: <span className="font-medium text-foreground">{fileInfo.fileName}</span></p>
+                    <p className="text-muted-foreground">Archivo en la nube: <span className="font-medium text-foreground">{fileInfo.fileName}</span></p>
                 </div>
             )}
          </div>
