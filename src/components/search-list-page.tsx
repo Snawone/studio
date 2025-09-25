@@ -19,36 +19,42 @@ import {
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from '@/firebase';
-import { writeBatch, doc } from 'firebase/firestore';
+import { writeBatch, doc, updateDoc } from 'firebase/firestore';
 
 type SearchListPageProps = {
-  searchList: OnuData[];
+  searchListOnus: OnuData[];
+  searchListIds: string[];
   userId: string;
 }
 
-export function SearchListPage({ searchList, userId }: SearchListPageProps) {
+export function SearchListPage({ searchListOnus, searchListIds, userId }: SearchListPageProps) {
   const firestore = useFirestore();
   const [onuToRetire, setOnuToRetire] = useState<OnuData | null>(null);
   const [isConfirmRetireAllOpen, setIsConfirmRetireAllOpen] = useState(false);
 
   const handleRemoveFromSearchList = (onuId: string) => {
-    const docRef = doc(firestore, 'users', userId, 'onus', onuId);
-    const batch = writeBatch(firestore);
-    batch.update(docRef, { inSearch: false });
-    batch.commit();
+    const userDocRef = doc(firestore, 'users', userId);
+    const newSearchList = searchListIds.filter(id => id !== onuId);
+    updateDoc(userDocRef, { searchList: newSearchList });
   };
   
   const handleRetireOnu = (onuToRetire: OnuData) => {
+    const userDocRef = doc(firestore, 'users', userId);
+    const onuDocRef = doc(firestore, 'onus', onuToRetire.id);
     const removedDate = new Date().toISOString();
-    const docRef = doc(firestore, 'users', userId, 'onus', onuToRetire.id);
+    
     const batch = writeBatch(firestore);
 
-    batch.update(docRef, {
+    // Update ONU status
+    batch.update(onuDocRef, {
       status: 'removed',
-      inSearch: false,
       removedDate: removedDate,
       history: [...(onuToRetire.history || []), { action: 'removed', date: removedDate }]
     });
+
+    // Remove from search list
+    const newSearchList = searchListIds.filter(id => id !== onuToRetire.id);
+    batch.update(userDocRef, { searchList: newSearchList });
 
     batch.commit();
     setOnuToRetire(null);
@@ -57,17 +63,22 @@ export function SearchListPage({ searchList, userId }: SearchListPageProps) {
   const handleRetireAll = () => {
     const date = new Date().toISOString();
     const batch = writeBatch(firestore);
+    const userDocRef = doc(firestore, 'users', userId);
 
-    searchList.forEach(onuInSearch => {
-      const docRef = doc(firestore, 'users', userId, 'onus', onuInSearch.id);
-      batch.update(docRef, {
-        status: 'removed',
-        inSearch: false,
-        removedDate: date,
-        history: [...(onuInSearch.history || []), { action: 'removed', date }]
-      });
+    searchListOnus.forEach(onuInSearch => {
+      if (onuInSearch.status === 'active') {
+        const onuDocRef = doc(firestore, 'onus', onuInSearch.id);
+        batch.update(onuDocRef, {
+          status: 'removed',
+          removedDate: date,
+          history: [...(onuInSearch.history || []), { action: 'removed', date }]
+        });
+      }
     });
     
+    // Clear the search list
+    batch.update(userDocRef, { searchList: [] });
+
     batch.commit();
     setIsConfirmRetireAllOpen(false);
   }
@@ -88,13 +99,13 @@ export function SearchListPage({ searchList, userId }: SearchListPageProps) {
         <div className="space-y-2">
           <h2 className="text-2xl font-headline font-semibold flex items-center gap-2">
             <SearchCheck className="h-6 w-6" />
-            Lista de Búsqueda ({searchList.length})
+            Lista de Búsqueda ({searchListOnus.length})
           </h2>
           <p className="text-muted-foreground text-sm">
             Aquí están las ONUs que has marcado. Puedes marcarlas como encontradas individualmente o todas a la vez.
           </p>
         </div>
-        {searchList.length > 0 && (
+        {searchListOnus.length > 0 && (
             <Button onClick={() => setIsConfirmRetireAllOpen(true)}>
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Marcar todas como encontradas
@@ -103,9 +114,9 @@ export function SearchListPage({ searchList, userId }: SearchListPageProps) {
       </div>
 
       <div className="space-y-6">
-        {searchList.length > 0 ? (
+        {searchListOnus.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {searchList.map((onu) => (
+            {searchListOnus.map((onu) => (
               <Card key={onu.id} className="flex flex-col justify-between">
                 <div>
                     <CardHeader>
@@ -198,7 +209,7 @@ export function SearchListPage({ searchList, userId }: SearchListPageProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar todas como encontradas?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá las {searchList.length} ONUs de esta lista a "Retiradas" (si están activas) y limpiará la lista de búsqueda. ¿Estás seguro?
+              Esto moverá las {searchListOnus.length} ONUs de esta lista a "Retiradas" (si están activas) y limpiará la lista de búsqueda. ¿Estás seguro?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

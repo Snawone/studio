@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from '@/firebase';
+import { AuthProvider } from '@/firebase/auth/auth-provider';
 
 export const metadata: Metadata = {
   title: 'ONUs & SBTs',
@@ -23,7 +24,9 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased">
         <FirebaseClientProvider>
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </FirebaseClientProvider>
         <Toaster />
       </body>

@@ -14,6 +14,12 @@ export type OnuData = {
   removedDate?: string | null;
   history: OnuHistoryEntry[];
   status: 'active' | 'removed';
-  inSearch: boolean;
-  userId: string;
 };
+
+export type UserProfile = {
+  id: string;
+  name: string;
+  email: string;
+  searchList: string[];
+  isAdmin?: boolean;
+}

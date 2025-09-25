@@ -18,73 +18,127 @@
           "description": "The location of the ONU on the shelf (e.g., A1-2, B3-5)."
         },
         "addedDate": {
-            "type": "string",
-            "format": "date-time",
-            "description": "The date the ONU was added to the inventory."
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the ONU was added to the inventory."
         },
         "removedDate": {
-            "type": "string",
-            "format": "date-time",
-            "description": "The date the ONU was removed from the inventory."
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the ONU was removed from the inventory."
         },
         "status": {
-            "type": "string",
-            "enum": ["active", "removed"],
-            "description": "The current status of the ONU."
-        },
-        "inSearch": {
-            "type": "boolean",
-            "description": "Whether the ONU is in the user's search list."
+          "type": "string",
+          "enum": [
+            "active",
+            "removed"
+          ],
+          "description": "The current status of the ONU."
         },
         "history": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "action": { "type": "string", "enum": ["added", "removed", "restored", "created"]},
-                    "date": { "type": "string", "format": "date-time"},
-                    "source": {"type": "string", "enum": ["file", "manual"]}
-                }
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "added",
+                  "removed",
+                  "restored",
+                  "created"
+                ]
+              },
+              "date": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "file",
+                  "manual"
+                ]
+              }
             }
-        },
-        "userId": {
-          "type": "string",
-          "description": "The ID of the user who owns this ONU entry."
+          }
         }
       },
       "required": [
         "id",
         "serialNumber",
         "shelfLocation",
-        "status",
-        "inSearch",
-        "userId"
+        "status"
+      ]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores public information about a user.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "searchList": {
+          "type": "array",
+          "description": "A list of ONU IDs that the user is currently searching for.",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "email"
       ]
     }
   },
   "auth": {
     "providers": [
-      "anonymous"
-    ]
+      "email-password"
+    ],
+    "customClaims": {
+      "isAdmin": {
+        "type": "boolean"
+      }
+    }
   },
   "firestore": {
     "structure": [
       {
-        "path": "users/{userId}/onus/{onuId}",
+        "path": "onus/{onuId}",
         "definition": {
           "entityName": "Onu",
           "schema": {
             "$ref": "#/entities/Onu"
           },
-          "description": "Stores ONU data for a specific user.",
+          "description": "Global collection of all ONUs.",
+          "params": [
+            {
+              "name": "onuId",
+              "description": "The unique identifier of the ONU."
+            }
+          ]
+        }
+      },
+      {
+        "path": "users/{userId}",
+        "definition": {
+          "entityName": "UserProfile",
+          "schema": {
+            "$ref": "#/entities/UserProfile"
+          },
+          "description": "Stores user profile information.",
           "params": [
             {
               "name": "userId",
               "description": "The unique identifier of the user."
-            },
-            {
-              "name": "onuId",
-              "description": "The unique identifier of the ONU."
             }
           ]
         }

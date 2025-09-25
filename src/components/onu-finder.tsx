@@ -50,12 +50,14 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from "@/firebase";
-import { writeBatch, doc } from "firebase/firestore";
+import { writeBatch, doc, updateDoc, setDoc } from "firebase/firestore";
 import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates";
+import { useAuthContext } from "@/firebase/auth/auth-provider";
 
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
     onus: OnuData[];
+    searchList: string[];
     allShelves: string[];
     userId: string;
 }
@@ -63,10 +65,12 @@ type OnuFinderProps = {
 export function OnuFinder({ 
   activeView, 
   onus,
+  searchList,
   allShelves,
   userId
 }: OnuFinderProps) {
   const firestore = useFirestore();
+  const { profile } = useAuthContext();
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
@@ -92,17 +96,11 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   useEffect(() => {
-    // This effect now only checks if there is any data to determine the upload screen.
-    // If onus has items, it means data is loaded from Firestore.
-    if (onus && onus.length > 0) {
+    if (onus) {
       setIsDataLoaded(true);
     }
-    // Also, if a file has been processed, we consider data loaded.
-    const localFlag = localStorage.getItem(`onusLoaded_${userId}`);
-    if(localFlag) setIsDataLoaded(true);
-
     setIsHydrating(false);
-  }, [onus, userId]);
+  }, [onus]);
 
 
   const parseAndUploadSheetData = async (wb: XLSX.WorkBook, sheetName: string) => {
@@ -136,10 +134,8 @@ export function OnuFinder({
                                 addedDate: fileProcessDate,
                                 history: [{ action: 'added', date: fileProcessDate, source: 'file' }],
                                 status: 'active',
-                                inSearch: false,
-                                userId: userId,
                             };
-                            const docRef = doc(firestore, 'users', userId, 'onus', newOnu.id);
+                            const docRef = doc(firestore, 'onus', newOnu.id);
                             batch.set(docRef, newOnu);
                         }
                     }
@@ -149,7 +145,6 @@ export function OnuFinder({
         
         await batch.commit();
         setIsDataLoaded(true);
-        localStorage.setItem(`onusLoaded_${userId}`, 'true');
 
     } catch (err: any) {
         setError(err.message || `Error al procesar la hoja "${sheetName}".`);
@@ -233,7 +228,7 @@ export function OnuFinder({
   const handleConfirmRetire = () => {
     if (onuToManage) {
         const removedDate = new Date().toISOString();
-        const docRef = doc(firestore, 'users', userId, 'onus', onuToManage.id);
+        const docRef = doc(firestore, 'onus', onuToManage.id);
         updateDocumentNonBlocking(docRef, {
           status: 'removed',
           removedDate: removedDate,
@@ -247,7 +242,7 @@ export function OnuFinder({
   const handleConfirmRestore = () => {
     if (onuToManage) {
       const restoredDate = new Date().toISOString();
-      const docRef = doc(firestore, 'users', userId, 'onus', onuToManage.id);
+      const docRef = doc(firestore, 'onus', onuToManage.id);
       updateDocumentNonBlocking(docRef, {
         status: 'active',
         removedDate: null,
@@ -271,10 +266,8 @@ export function OnuFinder({
           addedDate: addedDate,
           history: [{ action: 'created', date: addedDate, source: 'manual'}],
           status: 'active',
-          inSearch: false,
-          userId: userId,
       };
-      const docRef = doc(firestore, 'users', userId, 'onus', newOnu.id);
+      const docRef = doc(firestore, 'onus', newOnu.id);
       setDocumentNonBlocking(docRef, newOnu, { merge: true });
       setNewOnuId('');
       setNewOnuShelf('');
@@ -282,10 +275,14 @@ export function OnuFinder({
   };
 
   const handleToggleSearchList = (onu: OnuData) => {
-    const docRef = doc(firestore, 'users', userId, 'onus', onu.id);
-    updateDocumentNonBlocking(docRef, {
-      inSearch: !onu.inSearch
-    });
+    const userDocRef = doc(firestore, 'users', userId);
+    let newSearchList;
+    if (searchList.includes(onu.id)) {
+      newSearchList = searchList.filter(id => id !== onu.id);
+    } else {
+      newSearchList = [...searchList, onu.id];
+    }
+    updateDocumentNonBlocking(userDocRef, { searchList: newSearchList });
   };
 
   const filteredResults = useMemo(() => {
@@ -311,9 +308,8 @@ export function OnuFinder({
   }, [onus, activeView]);
 
   const resetState = () => {
-    // This will now just clear the UI state for a new upload
-    // But won't delete firebase data. A separate function would be needed for that.
-    setIsDataLoaded(false);
+    // This action could be repurposed to delete all ONUs, but would require admin rights.
+    // For now, it just resets the file upload UI.
     setWorkbook(null);
     setSheetNames([]);
     setSelectedSheet('');
@@ -324,7 +320,6 @@ export function OnuFinder({
     if(fileInputRef.current) {
         fileInputRef.current.value = '';
     }
-    localStorage.removeItem(`onusLoaded_${userId}`);
   };
   
   const formatDate = (dateString: string | undefined) => {
@@ -362,7 +357,7 @@ export function OnuFinder({
     const onuId = row['ONU ID'];
     const idPrefix = onuId.slice(0, -6);
     const idSuffix = onuId.slice(-6);
-    const isInSearchList = row.inSearch;
+    const isInSearchList = searchList.includes(row.id);
   
     return (
       <Card key={`${row.id}-${index}`} className={`group flex flex-col justify-between transition-all duration-300 ${isExactMatch ? 'border-primary shadow-lg scale-105' : ''} ${isInSearchList ? 'border-blue-500' : ''}`}>
@@ -446,9 +441,12 @@ export function OnuFinder({
               size="sm"
               className="w-full text-green-600 hover:text-green-700 hover:bg-green-50 border-green-600/50"
               onClick={() => {
-                setOnuToManage(row);
-                setIsConfirmRestoreOpen(true);
+                if (profile?.isAdmin) {
+                  setOnuToManage(row);
+                  setIsConfirmRestoreOpen(true);
+                }
               }}
+              disabled={!profile?.isAdmin}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               Devolver
@@ -459,9 +457,12 @@ export function OnuFinder({
               size="sm"
               className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
               onClick={() => {
-                setOnuToManage(row);
-                setIsConfirmRetireOpen(true);
+                if (profile?.isAdmin) {
+                  setOnuToManage(row);
+                  setIsConfirmRetireOpen(true);
+                }
               }}
+              disabled={!profile?.isAdmin}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Retirar
@@ -550,7 +551,7 @@ export function OnuFinder({
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
-      {!isDataLoaded ? (
+      {!isDataLoaded && profile?.isAdmin ? (
         <Card className="text-center max-w-xl mx-auto">
           <CardHeader>
             <div className="mx-auto bg-secondary p-3 rounded-full w-fit">
@@ -558,7 +559,7 @@ export function OnuFinder({
             </div>
             <CardTitle className="font-headline mt-4">Importar Hoja de Cálculo</CardTitle>
             <CardDescription>
-              Sube tu archivo de Excel o CSV, o pega un enlace para empezar a buscar tus ONUs. Los datos se guardarán en tu cuenta.
+              Sube tu archivo de Excel o CSV para empezar a buscar tus ONUs. Los datos se guardarán para todos los usuarios.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
@@ -632,51 +633,53 @@ export function OnuFinder({
                         {activeView === 'activas' ? 'Visualiza y gestiona las ONUs disponibles en los estantes.' : 'Consulta el historial de ONUs que han sido retiradas.'}
                     </p>
                 </div>
-                <div className="flex gap-2">
-                    <Dialog open={isAddOnuOpen} onOpenChange={setIsAddOnuOpen}>
-                        <DialogTrigger asChild>
-                            <Button variant="outline">
-                                <PlusCircle className="mr-2 h-4 w-4" />
-                                Agregar ONU
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle>Agregar Nueva ONU/STB</DialogTitle>
-                            </DialogHeader>
-                            <div className="grid gap-4 py-4">
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="new-onu-id" className="text-right">ID de ONU</Label>
-                                    <Input id="new-onu-id" value={newOnuId} onChange={(e) => setNewOnuId(e.target.value)} className="col-span-3" placeholder="Ej: 2430011054007532" />
-                                </div>
-                                <div className="grid grid-cols-4 items-center gap-4">
-                                    <Label htmlFor="new-onu-shelf" className="text-right">Estante</Label>
-                                    <Select value={newOnuShelf} onValueChange={setNewOnuShelf}>
-                                      <SelectTrigger className="col-span-3">
-                                        <SelectValue placeholder="Selecciona un estante" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {allShelves.map(shelf => (
-                                          <SelectItem key={shelf} value={shelf}>{shelf}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                            <DialogFooter>
-                                <DialogClose asChild>
-                                  <Button variant="outline">Cancelar</Button>
-                                </DialogClose>
-                                <Button onClick={handleAddOnu}>Guardar ONU</Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
-                    <Button variant="destructive" size="sm" onClick={resetState}>
-                        Cargar otro archivo
-                    </Button>
-                </div>
+                {profile?.isAdmin && (
+                  <div className="flex gap-2">
+                      <Dialog open={isAddOnuOpen} onOpenChange={setIsAddOnuOpen}>
+                          <DialogTrigger asChild>
+                              <Button variant="outline">
+                                  <PlusCircle className="mr-2 h-4 w-4" />
+                                  Agregar ONU
+                              </Button>
+                          </DialogTrigger>
+                          <DialogContent>
+                              <DialogHeader>
+                                  <DialogTitle>Agregar Nueva ONU/STB</DialogTitle>
+                              </DialogHeader>
+                              <div className="grid gap-4 py-4">
+                                  <div className="grid grid-cols-4 items-center gap-4">
+                                      <Label htmlFor="new-onu-id" className="text-right">ID de ONU</Label>
+                                      <Input id="new-onu-id" value={newOnuId} onChange={(e) => setNewOnuId(e.target.value)} className="col-span-3" placeholder="Ej: 2430011054007532" />
+                                  </div>
+                                  <div className="grid grid-cols-4 items-center gap-4">
+                                      <Label htmlFor="new-onu-shelf" className="text-right">Estante</Label>
+                                      <Select value={newOnuShelf} onValueChange={setNewOnuShelf}>
+                                        <SelectTrigger className="col-span-3">
+                                          <SelectValue placeholder="Selecciona un estante" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {allShelves.map(shelf => (
+                                            <SelectItem key={shelf} value={shelf}>{shelf}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                  </div>
+                              </div>
+                              <DialogFooter>
+                                  <DialogClose asChild>
+                                    <Button variant="outline">Cancelar</Button>
+                                  </DialogClose>
+                                  <Button onClick={handleAddOnu}>Guardar ONU</Button>
+                              </DialogFooter>
+                          </DialogContent>
+                      </Dialog>
+                      <Button variant="destructive" size="sm" onClick={resetState}>
+                          Cargar otro archivo
+                      </Button>
+                  </div>
+                )}
             </div>
-            {fileName && (
+            {fileName && profile?.isAdmin && (
                 <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm">
                     <p className="text-muted-foreground">Archivo cargado: <span className="font-medium text-foreground">{fileName}</span></p>
                     {sheetNames.length > 1 && (
