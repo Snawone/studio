@@ -740,5 +740,3 @@ export function OnuFinder({ activeView }: OnuFinderProps) {
     </section>
   );
 }
-
-    
