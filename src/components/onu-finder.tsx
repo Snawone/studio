@@ -91,18 +91,24 @@ export function OnuFinder() {
   }, []);
 
   useEffect(() => {
-    if (isDataLoaded) {
-      try {
-        localStorage.setItem('onuData', JSON.stringify(data));
-        localStorage.setItem('onuRemovedData', JSON.stringify(removedOnus));
-        if (fileName) {
-          localStorage.setItem('onuFileName', fileName);
+    if (!isHydrating) {
+        try {
+            if (isDataLoaded) {
+                localStorage.setItem('onuData', JSON.stringify(data));
+                localStorage.setItem('onuRemovedData', JSON.stringify(removedOnus));
+                if (fileName) {
+                    localStorage.setItem('onuFileName', fileName);
+                }
+            } else {
+                localStorage.removeItem('onuData');
+                localStorage.removeItem('onuRemovedData');
+                localStorage.removeItem('onuFileName');
+            }
+        } catch (e) {
+            console.error("Failed to save data to localStorage", e);
         }
-      } catch (e) {
-        console.error("Failed to save data to localStorage", e);
-      }
     }
-  }, [data, removedOnus, fileName, isDataLoaded]);
+  }, [data, removedOnus, fileName, isDataLoaded, isHydrating]);
 
 
   const handleFileParse = (file: File) => {
@@ -244,12 +250,12 @@ export function OnuFinder() {
         }
         shelfMap[shelf].push(onu);
     });
-    return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB));
+    return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
   }, [filteredResults]);
 
   const allShelves = useMemo(() => {
     const uniqueShelves = new Set(data.map(onu => onu.Shelf));
-    return Array.from(uniqueShelves).sort();
+    return Array.from(uniqueShelves).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [data]);
 
 
