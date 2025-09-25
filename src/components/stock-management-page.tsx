@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -12,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { addDoc, collection, doc, runTransaction } from 'firebase/firestore';
+import { addDoc, collection, doc, runTransaction, getDoc, writeBatch } from 'firebase/firestore';
 import { PackagePlus, Loader2, Warehouse, PlusCircle, Server, AlertTriangle } from 'lucide-react';
 import { type Shelf, type OnuData } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -83,40 +82,46 @@ export function StockManagementPage() {
         return;
     }
 
+    if(selectedShelf.itemCount >= selectedShelf.capacity) {
+        toast({ variant: "destructive", title: "Estante lleno", description: `El estante "${selectedShelf.name}" ha alcanzado su capacidad máxima.` });
+        setIsAddingDevice(false);
+        return;
+    }
+
     const deviceRef = doc(firestore, 'onus', values.id);
     const shelfRef = doc(firestore, 'shelves', values.shelfId);
 
     try {
-        await runTransaction(firestore, async (transaction) => {
-            const shelfDoc = await transaction.get(shelfRef);
-            if (!shelfDoc.exists()) {
-                throw new Error("El estante no existe.");
-            }
-            const currentShelf = shelfDoc.data() as Shelf;
-            if (currentShelf.itemCount >= currentShelf.capacity) {
-                throw new Error("El estante ha alcanzado su capacidad máxima.");
-            }
-            
-            const deviceDoc = await transaction.get(deviceRef);
-            if (deviceDoc.exists()) {
-                throw new Error("Ya existe un dispositivo con este ID.");
-            }
-            
-            const addedDate = new Date().toISOString();
-            const newDevice: Omit<OnuData, 'id'> = {
-                'ONU ID': values.id,
-                shelfId: values.shelfId,
-                shelfName: selectedShelf.name,
-                addedDate: addedDate,
-                status: 'active',
-                history: [{ action: 'created', date: addedDate, source: 'manual' }],
-            };
+        const deviceDoc = await getDoc(deviceRef);
+        if (deviceDoc.exists()) {
+            throw new Error("Ya existe un dispositivo con este ID en el inventario.");
+        }
+        
+        const batch = writeBatch(firestore);
+        
+        const addedDate = new Date().toISOString();
+        const newDevice: Omit<OnuData, 'id'> = {
+            'ONU ID': values.id,
+            shelfId: values.shelfId,
+            shelfName: selectedShelf.name,
+            addedDate: addedDate,
+            status: 'active',
+            history: [{ action: 'created', date: addedDate, source: 'manual' }],
+        };
 
-            transaction.set(deviceRef, newDevice);
-            transaction.update(shelfRef, { itemCount: currentShelf.itemCount + 1 });
-        });
+        batch.set(deviceRef, newDevice);
+        batch.update(shelfRef, { itemCount: selectedShelf.itemCount + 1 });
+        
+        await batch.commit();
+
         toast({ title: "Dispositivo agregado", description: `Dispositivo "${values.id}" agregado al estante "${selectedShelf.name}".` });
-        deviceForm.reset();
+        
+        // Reset only the device ID field, keep shelf selection
+        deviceForm.reset({
+            id: '',
+            shelfId: values.shelfId,
+        });
+
     } catch (error: any) {
         console.error("Error adding device: ", error);
         toast({ variant: "destructive", title: "Error al agregar", description: error.message });
@@ -243,7 +248,7 @@ export function StockManagementPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Estante</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value} defaultValue="">
                             <FormControl>
                               <SelectTrigger><SelectValue placeholder="Seleccionar estante..." /></SelectTrigger>
                             </FormControl>
@@ -275,5 +280,3 @@ export function StockManagementPage() {
     </section>
   );
 }
-
-    
