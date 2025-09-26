@@ -553,9 +553,9 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
           <CardDescription>Busca un dispositivo por su ID o filtra por estante para moverlo o eliminarlo del inventario.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-           <div className="flex flex-col md:flex-row gap-4 md:items-center md:flex-wrap">
+           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-grow flex items-center gap-2">
-              <div className="relative flex-grow">
+              <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Buscar por ID de dispositivo..."
@@ -571,11 +571,9 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
               </Button>
             </div>
             
-            <Separator className="my-2 md:hidden" />
-            
             <div className="flex items-center gap-2">
-              <Label htmlFor="shelf-filter" className="text-sm shrink-0">o Filtrar por Estante:</Label>
-              <div className="flex-grow">
+              <Label htmlFor="shelf-filter" className="text-sm shrink-0">o Filtrar:</Label>
+              <div className="w-full">
                 <Select onValueChange={(value) => setFilterShelfId(value === 'none' ? null : value)} value={filterShelfId || 'none'}>
                     <SelectTrigger id="shelf-filter" className="w-full">
                         <SelectValue placeholder="Seleccionar estante..." />
@@ -635,3 +633,5 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     </section>
   );
 }
+
+    
