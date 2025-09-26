@@ -40,15 +40,6 @@ export function StockManagementPage() {
     defaultValues: { ids: '', shelfId: '', type: undefined },
   });
 
-  const selectedType = deviceForm.watch('type');
-
-  const filteredShelves = useMemo(() => {
-    if (!allShelves || !selectedType) {
-      return [];
-    }
-    return allShelves.filter(shelf => shelf.type === selectedType);
-  }, [allShelves, selectedType]);
-
   const handleAddDevices = async (values: DeviceFormValues) => {
     setIsAddingDevice(true);
     
@@ -226,14 +217,14 @@ export function StockManagementPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Estante</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value} defaultValue="" disabled={!selectedType}>
+                          <Select onValueChange={field.onChange} value={field.value} defaultValue="">
                             <FormControl>
-                              <SelectTrigger><SelectValue placeholder={selectedType ? "Seleccionar estante..." : "Primero elije un tipo"} /></SelectTrigger>
+                              <SelectTrigger><SelectValue placeholder={"Seleccionar estante..."} /></SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {filteredShelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map((shelf) => (
+                              {(allShelves || []).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map((shelf) => (
                                   <SelectItem key={shelf.id} value={shelf.id} disabled={shelf.itemCount >= shelf.capacity}>
-                                    {shelf.name} ({shelf.itemCount}/{shelf.capacity})
+                                    {shelf.name} ({shelf.itemCount}/{shelf.capacity}) - {shelf.type.toUpperCase()}
                                   </SelectItem>
                               ))}
                             </SelectContent>
