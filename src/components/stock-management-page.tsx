@@ -8,14 +8,14 @@ import * as z from 'zod';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { addDoc, collection, doc, getDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, writeBatch, collection } from 'firebase/firestore';
 import { PackagePlus, Loader2, AlertTriangle, Server } from 'lucide-react';
-import { type Shelf, type OnuData } from '@/lib/data';
+import { type Shelf, type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { useAuthContext } from '@/firebase/auth/auth-provider';
 
 
 const deviceSchema = z.object({
@@ -28,6 +28,7 @@ type DeviceFormValues = z.infer<typeof deviceSchema>;
 export function StockManagementPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { profile } = useAuthContext();
   const [isAddingDevice, setIsAddingDevice] = useState(false);
 
   const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
@@ -40,6 +41,13 @@ export function StockManagementPage() {
 
   const handleAddDevice = async (values: DeviceFormValues) => {
     setIsAddingDevice(true);
+    
+    if (!profile) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo identificar al usuario." });
+      setIsAddingDevice(false);
+      return;
+    }
+
     const selectedShelf = shelves?.find(s => s.id === values.shelfId);
     if (!selectedShelf) {
         toast({ variant: "destructive", title: "Error", description: "El estante seleccionado no es válido." });
@@ -65,13 +73,22 @@ export function StockManagementPage() {
         const batch = writeBatch(firestore);
         
         const addedDate = new Date().toISOString();
+        
+        const historyEntry: OnuHistoryEntry = {
+            action: 'created',
+            date: addedDate,
+            source: 'manual',
+            userId: profile.id,
+            userName: profile.name,
+        };
+
         const newDevice: Omit<OnuData, 'id'> = {
             'ONU ID': values.id,
             shelfId: values.shelfId,
             shelfName: selectedShelf.name,
             addedDate: addedDate,
             status: 'active',
-            history: [{ action: 'created', date: addedDate, source: 'manual' }],
+            history: [historyEntry],
         };
 
         batch.set(deviceRef, newDevice);
@@ -91,6 +108,7 @@ export function StockManagementPage() {
         toast({ variant: "destructive", title: "Error al agregar", description: error.message });
     } finally {
         setIsAddingDevice(false);
+        deviceForm.setFocus('id');
     }
   };
 
@@ -136,7 +154,7 @@ export function StockManagementPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>ID del Dispositivo</FormLabel>
-                          <FormControl><Input placeholder="Ej: 2430011054007532" {...field} /></FormControl>
+                          <FormControl><Input placeholder="Ej: 2430011054007532" {...field} autoFocus /></FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -152,7 +170,7 @@ export function StockManagementPage() {
                               <SelectTrigger><SelectValue placeholder="Seleccionar estante..." /></SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {shelves.map((shelf) => (
+                              {shelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map((shelf) => (
                                   <SelectItem key={shelf.id} value={shelf.id} disabled={shelf.itemCount >= shelf.capacity}>
                                     {shelf.name} ({shelf.itemCount}/{shelf.capacity} {shelf.type.toUpperCase()}s)
                                   </SelectItem>

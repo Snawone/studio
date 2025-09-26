@@ -56,7 +56,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
   const getHistoryMessage = (entry: OnuHistoryEntry, onu: OnuData) => {
     const baseMessage = (() => {
         switch (entry.action) {
-            case 'created': return `Dispositivo creado manualmente en estante ${onu.shelfName}.`;
+            case 'created': return `Dispositivo creado en estante ${onu.shelfName}.`;
             case 'added': return `Dispositivo agregado en estante ${onu.shelfName}.`;
             case 'removed': return `Dispositivo retirado del inventario.`;
             case 'restored': return `Dispositivo devuelto al estante ${onu.shelfName}.`;
