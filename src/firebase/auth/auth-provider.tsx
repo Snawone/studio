@@ -38,58 +38,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setAuthLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Profile fetching will be handled by the next useEffect
-      } else {
-        setUser(null);
-        setProfile(null);
-        setAuthLoading(false);
-        // If on an app page, redirect to home
-        if (pathname.startsWith('/app')) {
-            router.push('/');
-        }
-      }
-    });
-    return () => unsubscribe();
-  }, [auth, router, pathname]);
-
-  useEffect(() => {
-    let unsubscribeProfile: () => void = () => {};
-
-    if (user) {
-      // Get custom claims first
-      user.getIdTokenResult(true).then(idTokenResult => {
+        
+        const idTokenResult = await firebaseUser.getIdTokenResult(true);
         const isAdmin = idTokenResult.claims.isAdmin === true;
 
-        // Now listen to profile changes
-        const userDocRef = doc(firestore, 'users', user.uid);
-        unsubscribeProfile = onSnapshot(userDocRef, (doc) => {
+        const userDocRef = doc(firestore, 'users', firebaseUser.uid);
+        const unsubscribeProfile = onSnapshot(userDocRef, (doc) => {
           if (doc.exists()) {
             const userProfileData = { id: doc.id, ...doc.data() } as UserProfile;
-            userProfileData.isAdmin = isAdmin; // Set isAdmin from the token claim
+            userProfileData.isAdmin = isAdmin;
             setProfile(userProfileData);
 
             if (!pathname.startsWith('/app')) {
               router.push('/app');
             }
           } else {
-              setProfile(null);
+              setProfile(null); // User record doesn't exist in Firestore
           }
           setAuthLoading(false);
         }, (error) => {
             console.error("Error fetching user profile:", error);
-            setAuthLoading(false);
             setProfile(null);
+            setAuthLoading(false);
         });
-      }).catch(error => {
-        console.error("Error getting ID token result:", error);
+        
+        return () => unsubscribeProfile();
+
+      } else {
+        setUser(null);
+        setProfile(null);
         setAuthLoading(false);
-      });
-    } else {
-        setAuthLoading(false);
-    }
-    
-    return () => unsubscribeProfile();
-  }, [user, firestore, router, pathname, auth]);
+        if (pathname.startsWith('/app')) {
+            router.push('/');
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [auth, router, pathname, firestore]);
+  
 
   const logout = async () => {
     await signOut(auth);
