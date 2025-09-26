@@ -12,11 +12,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { doc, getDocs, writeBatch, collection, query, where, documentId } from 'firebase/firestore';
-import { PackagePlus, Loader2, AlertTriangle, Server, Box } from 'lucide-react';
+import { PackagePlus, Loader2, AlertTriangle, Server, Box, History, User, Calendar, ClipboardList } from 'lucide-react';
 import { type Shelf, type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
-
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 const deviceSchema = z.object({
   ids: z.string().min(1, "Debe ingresar al menos un ID de dispositivo."),
@@ -26,7 +36,20 @@ const deviceSchema = z.object({
 
 type DeviceFormValues = z.infer<typeof deviceSchema>;
 
-export function StockManagementPage() {
+interface StockManagementPageProps {
+  allOnus: OnuData[];
+}
+
+type LoadEvent = {
+  key: string;
+  date: string;
+  userName: string;
+  shelfName: string;
+  count: number;
+  deviceIds: string[];
+}
+
+export function StockManagementPage({ allOnus }: StockManagementPageProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { profile } = useAuthContext();
@@ -131,6 +154,42 @@ export function StockManagementPage() {
         deviceForm.setFocus('ids');
     }
   };
+
+  const loadHistory = useMemo(() => {
+    const events: Record<string, LoadEvent> = {};
+    
+    allOnus.forEach(onu => {
+        const createEntry = onu.history.find(h => h.action === 'created');
+        if (createEntry && createEntry.userName) {
+            const key = `${createEntry.date}-${createEntry.userName}-${onu.shelfName}`;
+            if (events[key]) {
+                events[key].count++;
+                events[key].deviceIds.push(onu.id);
+            } else {
+                events[key] = {
+                    key,
+                    date: createEntry.date,
+                    userName: createEntry.userName,
+                    shelfName: onu.shelfName,
+                    count: 1,
+                    deviceIds: [onu.id]
+                };
+            }
+        }
+    });
+
+    return Object.values(events).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [allOnus]);
+
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      return format(new Date(dateString), "dd/MM/yyyy, HH:mm", { locale: es });
+    } catch (e) {
+      return 'Fecha inválida';
+    }
+  };
+
 
   return (
     <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
@@ -242,6 +301,59 @@ export function StockManagementPage() {
             </form>
           </Form>
         )}
+      </Card>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle className='flex items-center gap-2'><History className="h-5 w-5 text-primary"/>Historial de Cargas</CardTitle>
+          <CardDescription>Registro de lotes de dispositivos agregados al inventario.</CardDescription>
+        </CardHeader>
+        <CardContent>
+            {loadHistory.length > 0 ? (
+                <ScrollArea className="h-72">
+                    <div className='space-y-4'>
+                        {loadHistory.map((event) => (
+                           <div key={event.key} className="p-4 border rounded-lg flex justify-between items-center">
+                                <div>
+                                    <div className="font-semibold">{event.count} dispositivos a <span className='text-primary'>{event.shelfName}</span></div>
+                                    <div className='text-sm text-muted-foreground flex items-center gap-4 mt-1'>
+                                        <span className='flex items-center gap-1'><Calendar className="h-4 w-4"/> {formatDate(event.date)}</span>
+                                        <span className='flex items-center gap-1'><User className="h-4 w-4"/> {event.userName}</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <Dialog>
+                                        <DialogTrigger asChild>
+                                            <Button variant="outline" size="sm">
+                                                <ClipboardList className="mr-2 h-4 w-4"/>
+                                                Ver IDs
+                                            </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader>
+                                                <DialogTitle>IDs Cargados</DialogTitle>
+                                                <DialogDescription>
+                                                    {event.count} dispositivos cargados a {event.shelfName} el {formatDate(event.date)}.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            <ScrollArea className="h-60 mt-4 border rounded-md p-4">
+                                                <div className="flex flex-col gap-2 font-mono text-sm">
+                                                    {event.deviceIds.map(id => <span key={id}>{id}</span>)}
+                                                </div>
+                                            </ScrollArea>
+                                        </DialogContent>
+                                    </Dialog>
+                                </div>
+                           </div>
+                        ))}
+                    </div>
+                </ScrollArea>
+            ) : (
+                <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                    <p className="text-sm text-muted-foreground">No hay historial de cargas todavía.</p>
+                </div>
+            )}
+        </CardContent>
       </Card>
     </section>
   );
