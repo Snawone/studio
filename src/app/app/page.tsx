@@ -137,14 +137,14 @@ export default function AppPage() {
                         Cargar Stock
                     </SidebarMenuButton>
                 </SidebarMenuItem>
-                <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => setActiveView('grupos-tecnicos')} isActive={activeView === 'grupos-tecnicos'} tooltip='Grupos Técnicos'>
-                        <Users />
-                        Grupos Técnicos
-                    </SidebarMenuButton>
-                </SidebarMenuItem>
               </>
             )}
+            <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => setActiveView('grupos-tecnicos')} isActive={activeView === 'grupos-tecnicos'} tooltip='Grupos Técnicos'>
+                    <Users />
+                    Grupos Técnicos
+                </SidebarMenuButton>
+            </SidebarMenuItem>
             <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => setActiveView('opciones')} isActive={activeView === 'opciones'} tooltip='Opciones'>
                     <Settings />
