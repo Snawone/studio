@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -7,11 +6,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { doc, getDoc, writeBatch, collection } from 'firebase/firestore';
+import { doc, getDocs, writeBatch, collection, query, where, documentId } from 'firebase/firestore';
 import { PackagePlus, Loader2, AlertTriangle, Server } from 'lucide-react';
 import { type Shelf, type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -19,7 +18,7 @@ import { useAuthContext } from '@/firebase/auth/auth-provider';
 
 
 const deviceSchema = z.object({
-  id: z.string().min(1, "El ID del dispositivo es requerido."),
+  ids: z.string().min(1, "Debe ingresar al menos un ID de dispositivo."),
   shelfId: z.string().min(1, "Debe seleccionar un estante."),
 });
 
@@ -36,10 +35,10 @@ export function StockManagementPage() {
 
   const deviceForm = useForm<DeviceFormValues>({
     resolver: zodResolver(deviceSchema),
-    defaultValues: { id: '', shelfId: '' },
+    defaultValues: { ids: '', shelfId: '' },
   });
 
-  const handleAddDevice = async (values: DeviceFormValues) => {
+  const handleAddDevices = async (values: DeviceFormValues) => {
     setIsAddingDevice(true);
     
     if (!profile) {
@@ -55,23 +54,37 @@ export function StockManagementPage() {
         return;
     }
 
-    if(selectedShelf.itemCount >= selectedShelf.capacity) {
-        toast({ variant: "destructive", title: "Estante lleno", description: `El estante "${selectedShelf.name}" ha alcanzado su capacidad máxima.` });
+    const deviceIds = values.ids.split(/[\s,;\n]+/).map(id => id.trim()).filter(id => id.length > 0);
+    const uniqueDeviceIds = [...new Set(deviceIds)];
+
+    if (uniqueDeviceIds.length === 0) {
+        toast({ variant: "destructive", title: "Error", description: "No se ingresaron IDs válidos." });
         setIsAddingDevice(false);
         return;
     }
 
-    const deviceRef = doc(firestore, 'onus', values.id);
-    const shelfRef = doc(firestore, 'shelves', values.shelfId);
+    if((selectedShelf.itemCount + uniqueDeviceIds.length) > selectedShelf.capacity) {
+        toast({ 
+            variant: "destructive", 
+            title: "Capacidad excedida", 
+            description: `El estante "${selectedShelf.name}" no tiene suficiente espacio para ${uniqueDeviceIds.length} dispositivos.` 
+        });
+        setIsAddingDevice(false);
+        return;
+    }
 
+    const onusRef = collection(firestore, 'onus');
+    const q = query(onusRef, where(documentId(), 'in', uniqueDeviceIds));
+    
     try {
-        const deviceDoc = await getDoc(deviceRef);
-        if (deviceDoc.exists()) {
-            throw new Error("Ya existe un dispositivo con este ID en el inventario.");
+        const existingDevicesSnapshot = await getDocs(q);
+        const existingIds = existingDevicesSnapshot.docs.map(doc => doc.id);
+
+        if (existingIds.length > 0) {
+            throw new Error(`Los siguientes IDs ya existen: ${existingIds.join(', ')}`);
         }
         
         const batch = writeBatch(firestore);
-        
         const addedDate = new Date().toISOString();
         
         const historyEntry: OnuHistoryEntry = {
@@ -82,33 +95,37 @@ export function StockManagementPage() {
             userName: profile.name,
         };
 
-        const newDevice: Omit<OnuData, 'id'> = {
-            'ONU ID': values.id,
-            shelfId: values.shelfId,
-            shelfName: selectedShelf.name,
-            addedDate: addedDate,
-            status: 'active',
-            history: [historyEntry],
-        };
-
-        batch.set(deviceRef, newDevice);
-        batch.update(shelfRef, { itemCount: selectedShelf.itemCount + 1 });
+        uniqueDeviceIds.forEach(deviceId => {
+            const deviceRef = doc(firestore, 'onus', deviceId);
+            const newDevice: Omit<OnuData, 'id'> = {
+                'ONU ID': deviceId,
+                shelfId: values.shelfId,
+                shelfName: selectedShelf.name,
+                addedDate: addedDate,
+                status: 'active',
+                history: [historyEntry],
+            };
+            batch.set(deviceRef, newDevice);
+        });
+        
+        const shelfRef = doc(firestore, 'shelves', values.shelfId);
+        batch.update(shelfRef, { itemCount: selectedShelf.itemCount + uniqueDeviceIds.length });
         
         await batch.commit();
 
-        toast({ title: "Dispositivo agregado", description: `Dispositivo "${values.id}" agregado al estante "${selectedShelf.name}".` });
+        toast({ title: "Dispositivos agregados", description: `${uniqueDeviceIds.length} dispositivo(s) agregados al estante "${selectedShelf.name}".` });
         
         deviceForm.reset({
-            id: '',
+            ids: '',
             shelfId: values.shelfId,
         });
 
     } catch (error: any) {
-        console.error("Error adding device: ", error);
+        console.error("Error adding devices: ", error);
         toast({ variant: "destructive", title: "Error al agregar", description: error.message });
     } finally {
         setIsAddingDevice(false);
-        deviceForm.setFocus('id');
+        deviceForm.setFocus('ids');
     }
   };
 
@@ -126,9 +143,9 @@ export function StockManagementPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Server className="h-5 w-5 text-primary"/>Cargar Dispositivo</CardTitle>
+          <CardTitle className="flex items-center gap-2"><Server className="h-5 w-5 text-primary"/>Carga Individual o Masiva</CardTitle>
           <CardDescription>
-            Agrega una nueva ONU o STB a un estante existente.
+            Ingresa uno o varios IDs de dispositivo separados por espacios, comas o saltos de línea.
           </CardDescription>
         </CardHeader>
         {isLoadingShelves ? (
@@ -145,16 +162,23 @@ export function StockManagementPage() {
             </CardContent>
         ) : (
           <Form {...deviceForm}>
-            <form onSubmit={deviceForm.handleSubmit(handleAddDevice)}>
+            <form onSubmit={deviceForm.handleSubmit(handleAddDevices)}>
               <CardContent className="space-y-4">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={deviceForm.control}
-                      name="id"
+                      name="ids"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>ID del Dispositivo</FormLabel>
-                          <FormControl><Input placeholder="Ej: 2430011054007532" {...field} autoFocus /></FormControl>
+                          <FormLabel>IDs de Dispositivos</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="2430011054007532 2430011054007533..." 
+                              className="h-32"
+                              {...field} 
+                              autoFocus 
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -187,7 +211,7 @@ export function StockManagementPage() {
                 <Button type="submit" disabled={isAddingDevice}>
                     {isAddingDevice && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     <PackagePlus className="mr-2 h-4 w-4"/>
-                    {isAddingDevice ? 'Agregando...' : 'Agregar Dispositivo'}
+                    {isAddingDevice ? 'Agregando...' : 'Agregar Dispositivos'}
                 </Button>
               </CardFooter>
             </form>
