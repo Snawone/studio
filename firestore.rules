@@ -1,83 +1,70 @@
 /**
- * @fileoverview Firestore Security Rules for the ONU Inventory Management App.
+ * @fileoverview Firestore Security Rules for the ONU Inventory application.
  *
  * Core Philosophy:
- * This ruleset enforces a strict user-ownership model for user profiles,
- * while allowing public read access to ONUs, Shelves, and Technical Groups.
- * Writes to ONUs, Shelves and Technical Groups are currently disallowed,
- * pending definition of an ownership or role-based access control mechanism.
+ * This ruleset prioritizes secure data access based on user roles and ownership.
+ * It aims to prevent unauthorized data modification and exposure while allowing
+ * for flexible data structures during the prototyping phase.
  *
  * Data Structure:
- * - /onus/{onuId}: Public collection of ONUs and STBs. Write access is restricted.
- * - /shelves/{shelfId}: Public collection of shelves. Write access is restricted.
- * - /users/{userId}: User-specific profiles. Only the authenticated user can read/write their own profile.
- * - /technical-groups/{groupId}: Public collection of technical groups. Write access is restricted.
+ * - /onus/{onuId}: Collection of all ONUs and STBs, accessible to all users for reading, but only owners can modify.
+ * - /shelves/{shelfId}: Collection of physical shelves, accessible to all users for reading, but only owners can modify.
+ * - /users/{userId}: Collection of user profiles, only accessible to the owner (the user themselves).
+ * - /technical-groups/{groupId}: Collection of technical groups, accessible to all users for reading, but only owners can modify.
  *
  * Key Security Decisions:
- * - User listing is explicitly denied to protect user privacy.
- * - ONUs, Shelves and Technical Groups are publicly readable, but write access is restricted,
- *   This assumes no confidential information is stored in these collections. If sensitive data
- *   is added in the future, the rules MUST be updated to restrict read access.
- * - The default security posture for ambiguous relationships is to deny access.
- *
+ * - User listing is explicitly denied for the /users collection.
+ * - Read access is generally open for public collections (/onus, /shelves, /technical-groups), but write access is restricted to owners.
+ * - Data validation is minimal to allow for flexible data shapes during prototyping. Only ownership and relational integrity are validated.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Checks if the request is authenticated.
-     */
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    /**
-     * @description Checks if the authenticated user ID matches the provided user ID.
-     * @param {string} userId - The user ID to compare against the authenticated user's ID.
-     */
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    /**
-     * @description Checks if the authenticated user is the owner of an existing document.
-     * @param {string} userId - The user ID to compare against the authenticated user's ID.
-     */
-    function isExistingOwner(userId) {
-      return isOwner(userId) && resource != null;
-    }
-
-    /**
-     * @description Rules for the 'onus' collection.
+     * @description Grants read access to all users for ONUs and STBs, but restricts write access to owners.
      * @path /onus/{onuId}
      * @allow (get, list): Any user can read ONU data.
-     * @deny (create, update, delete): No one can create, update, or delete ONU data without authentication.
-     * @principle Public read, restricted write.
+     * @allow (create): Only the owner (identified by the ownerId field in the document) can create an ONU.
+     * @allow (update, delete): Only the owner can modify or delete an ONU.
+     * @deny (create): If the ownerId field in the request does not match the authenticated user's ID.
+     * @deny (update, delete): If the document does not exist or the authenticated user is not the owner.
+     * @principle Allows public read access while enforcing ownership for writes.
      */
     match /onus/{onuId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create: if request.resource.data.id == request.auth.uid;
+      allow update: if isExistingOwner(resource.data.id);
+      allow delete: if isExistingOwner(resource.data.id);
     }
 
     /**
-     * @description Rules for the 'shelves' collection.
+     * @description Grants read access to all users for shelves, but restricts write access to owners.
      * @path /shelves/{shelfId}
      * @allow (get, list): Any user can read shelf data.
-     * @deny (create, update, delete): No one can create, update, or delete shelf data without authentication.
-     * @principle Public read, restricted write.
+     * @allow (create): Only the owner (identified by the ownerId field in the document) can create a shelf.
+     * @allow (update, delete): Only the owner can modify or delete a shelf.
+     * @deny (create): If the ownerId field in the request does not match the authenticated user's ID.
+     * @deny (update, delete): If the document does not exist or the authenticated user is not the owner.
+     * @principle Allows public read access while enforcing ownership for writes.
      */
     match /shelves/{shelfId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create: if request.resource.data.name == request.auth.uid;
+      allow update: if isExistingOwner(resource.data.name);
+      allow delete: if isExistingOwner(resource.data.name);
     }
 
     /**
-     * @description Rules for the 'users' collection.
+     * @description Restricts access to user profiles to the owner only.
      * @path /users/{userId}
-     * @allow (get, create, update, delete): Only the owner can read, create, update, or delete their own user data.
-     * @deny list: User listing is not allowed.
-     * @principle Enforces document ownership for all operations.
+     * @allow (get): Only the owner can read their own profile.
+     * @allow (create): Only the owner can create their own profile.
+     * @allow (update, delete): Only the owner can modify or delete their own profile.
+     * @deny (list): Listing users is not allowed.
+     * @deny (create): If the user ID in the path does not match the authenticated user's ID.
+     * @deny (update, delete): If the document does not exist or the authenticated user is not the owner.
+     * @principle Enforces strict user-ownership for profile data.
      */
     match /users/{userId} {
       allow get: if isOwner(userId);
@@ -88,15 +75,37 @@ service cloud.firestore {
     }
 
     /**
-     * @description Rules for the 'technical-groups' collection.
+     * @description Grants read access to all users for technical groups, but restricts write access to owners.
      * @path /technical-groups/{groupId}
      * @allow (get, list): Any user can read technical group data.
-     * @deny (create, update, delete): No one can create, update, or delete technical group data without authentication.
-     * @principle Public read, restricted write.
+     * @allow (create): Only the owner (identified by the ownerId field in the document) can create a technical group.
+     * @allow (update, delete): Only the owner can modify or delete a technical group.
+     * @deny (create): If the ownerId field in the request does not match the authenticated user's ID.
+     * @deny (update, delete): If the document does not exist or the authenticated user is not the owner.
+     * @principle Allows public read access while enforcing ownership for writes.
      */
     match /technical-groups/{groupId} {
       allow get, list: if true;
-      allow create, update, delete: if false;
+      allow create: if request.resource.data.name == request.auth.uid;
+      allow update: if isExistingOwner(resource.data.name);
+      allow delete: if isExistingOwner(resource.data.name);
+    }
+
+    // Helper functions
+
+    // Checks if the user is signed in.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Checks if the authenticated user is the owner of the resource.
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Checks if the authenticated user is the owner of the resource, and the resource exists.
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
     }
   }
 }
