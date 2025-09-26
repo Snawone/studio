@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useMemo, useTransition, useRef, useEffect, Dispatch, SetStateAction } from "react";
-import { type OnuData, type OnuHistoryEntry } from "@/lib/data";
+import { type OnuData, type OnuHistoryEntry, type Shelf } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -60,6 +60,11 @@ type OnuFinderProps = {
     isLoadingOnus: boolean;
 }
 
+type ShelfGroup = {
+    shelfName: string;
+    shelfType: 'onu' | 'stb';
+    onus: OnuData[];
+};
 
 export function OnuFinder({ 
   activeView, 
@@ -155,19 +160,27 @@ export function OnuFinder({
     );
   }, [searchTerm, onus]);
   
-  const shelves = useMemo(() => {
-    const shelfMap: Record<string, OnuData[]> = {};
-    if (activeView === 'activas') {
-        const activeOnus = onus.filter(o => o.status === 'active');
-        activeOnus.forEach(onu => {
-            const shelf = onu.shelfName || 'Sin Estante';
-            if (!shelfMap[shelf]) {
-                shelfMap[shelf] = [];
-            }
-            shelfMap[shelf].push(onu);
-        });
-    }
-    return Object.entries(shelfMap).sort(([shelfA], [shelfB]) => shelfA.localeCompare(shelfB, undefined, { numeric: true, sensitivity: 'base' }));
+  const shelves: ShelfGroup[] = useMemo(() => {
+    if (activeView !== 'activas') return [];
+
+    const shelfMap: Record<string, { shelfType: 'onu' | 'stb'; onus: OnuData[] }> = {};
+    const activeOnus = onus.filter(o => o.status === 'active');
+    
+    activeOnus.forEach(onu => {
+        const shelfName = onu.shelfName || 'Sin Estante';
+        if (!shelfMap[shelfName]) {
+            shelfMap[shelfName] = {
+                // shelfType can be taken from the first onu, as it's the same for the whole shelf
+                shelfType: onu.shelfType || 'onu', 
+                onus: [],
+            };
+        }
+        shelfMap[shelfName].onus.push(onu);
+    });
+    
+    return Object.entries(shelfMap)
+      .map(([shelfName, data]) => ({ shelfName, ...data }))
+      .sort((a, b) => a.shelfName.localeCompare(b.shelfName, undefined, { numeric: true, sensitivity: 'base' }));
   }, [onus, activeView]);
 
   
@@ -365,19 +378,19 @@ export function OnuFinder({
   const renderShelfAccordion = () => (
     <div className="space-y-4">
         {shelves.length > 0 ? (
-            <Accordion type="single" collapsible className="w-full" defaultValue={shelves.length > 0 ? shelves[0][0] : undefined}>
-                {shelves.map(([shelf, onus]) => (
-                    <AccordionItem value={shelf} key={shelf}>
+            <Accordion type="single" collapsible className="w-full" defaultValue={shelves.length > 0 ? shelves[0].shelfName : undefined}>
+                {shelves.map((shelfGroup) => (
+                    <AccordionItem value={shelfGroup.shelfName} key={shelfGroup.shelfName}>
                         <AccordionTrigger>
                             <div className="flex items-center gap-3">
                                 <Server className="h-5 w-5 text-primary" />
-                                <span className="font-medium">{shelf}</span>
-                                <Badge variant="secondary">{onus.length} ONUs</Badge>
+                                <span className="font-medium">{shelfGroup.shelfName}</span>
+                                <Badge variant="secondary">{shelfGroup.onus.length} {shelfGroup.shelfType.toUpperCase()}s</Badge>
                             </div>
                         </AccordionTrigger>
                         <AccordionContent>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-                                {onus.map((onu, index) => renderOnuCard(onu, index))}
+                                {shelfGroup.onus.map((onu, index) => renderOnuCard(onu, index))}
                             </div>
                         </AccordionContent>
                     </AccordionItem>
@@ -539,8 +552,3 @@ export function OnuFinder({
     </section>
   );
 }
-
-    
-
-    
-

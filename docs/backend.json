@@ -18,6 +18,11 @@
           "type": "string",
           "description": "Denormalized name of the shelf for easier querying and display."
         },
+        "shelfType": {
+          "type": "string",
+          "enum": ["onu", "stb"],
+          "description": "Denormalized type of the shelf for easier querying and display."
+        },
         "addedDate": {
           "type": "string",
           "format": "date-time",
@@ -76,6 +81,7 @@
         "id",
         "shelfId",
         "shelfName",
+        "shelfType",
         "status",
         "addedDate"
       ]

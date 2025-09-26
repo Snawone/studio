@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -101,6 +102,7 @@ export function StockManagementPage() {
                 'ONU ID': deviceId,
                 shelfId: values.shelfId,
                 shelfName: selectedShelf.name,
+                shelfType: selectedShelf.type,
                 addedDate: addedDate,
                 status: 'active',
                 history: [historyEntry],
