@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { doc, getDocs, writeBatch, collection, query, where, documentId, increment, deleteDoc } from 'firebase/firestore';
-import { PackagePlus, Loader2, AlertTriangle, Server, Box, History, User, Calendar, ClipboardList, Search, Move, Trash2 } from 'lucide-react';
+import { PackagePlus, Loader2, AlertTriangle, Server, Box, History, User, Calendar, ClipboardList, Search, Move, Trash2, XCircle } from 'lucide-react';
 import { type Shelf, type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
@@ -63,6 +63,82 @@ type LoadEvent = {
   deviceIds: string[];
 }
 
+const DeviceRow = ({ device, allShelves, onMove, onDelete }: { device: OnuData, allShelves: Shelf[], onMove: (device: OnuData, newShelfId: string) => void, onDelete: (device: OnuData) => void }) => {
+    const [targetShelfId, setTargetShelfId] = useState<string | null>(null);
+    const [isMoving, setIsMoving] = useState(false);
+    
+    const availableShelvesForMove = useMemo(() => {
+        return allShelves.filter(shelf => 
+            shelf.id !== device.shelfId &&
+            shelf.type === device.type &&
+            shelf.itemCount < shelf.capacity
+        );
+    }, [device, allShelves]);
+
+    const handleMoveClick = async () => {
+        if (!targetShelfId) return;
+        setIsMoving(true);
+        await onMove(device, targetShelfId);
+        setIsMoving(false);
+    };
+
+    return (
+        <div className="p-4 border rounded-lg space-y-4 bg-muted/30">
+            <div>
+                <h4 className="font-semibold font-mono text-sm break-all">{device.id}</h4>
+                <p className="text-xs text-muted-foreground">Tipo: {device.type.toUpperCase()}</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                <div className="flex items-end gap-2">
+                    <div className="flex-grow">
+                        <Label htmlFor={`move-shelf-${device.id}`} className="text-xs">Mover a Nuevo Estante</Label>
+                        <Select onValueChange={setTargetShelfId} disabled={availableShelvesForMove.length === 0}>
+                            <SelectTrigger id={`move-shelf-${device.id}`}>
+                                <SelectValue placeholder={availableShelvesForMove.length > 0 ? "Seleccionar..." : "No hay estantes"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {availableShelvesForMove.map(shelf => (
+                                    <SelectItem key={shelf.id} value={shelf.id}>
+                                        {shelf.name} ({shelf.itemCount}/{shelf.capacity})
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <Button onClick={handleMoveClick} disabled={!targetShelfId || isMoving} size="icon">
+                        {isMoving ? <Loader2 className="h-4 w-4 animate-spin"/> : <Move className="h-4 w-4"/>}
+                    </Button>
+                </div>
+                <div className="flex justify-end items-end h-full">
+                     <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Eliminar
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Esta acción es permanente. El dispositivo <strong className="font-mono break-all">{device.id}</strong> será eliminado del inventario y no se podrá recuperar.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => onDelete(device)} className="bg-destructive hover:bg-destructive/90">
+                                    Sí, eliminar permanentemente
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 export function StockManagementPage({ allOnus, allShelves }: StockManagementPageProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -70,24 +146,30 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
   const [isAddingDevice, setIsAddingDevice] = useState(false);
   
   const [managementSearchTerm, setManagementSearchTerm] = useState('');
-  const [foundDevice, setFoundDevice] = useState<OnuData | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  
-  const [targetShelfId, setTargetShelfId] = useState<string | null>(null);
-  const [isMoving, setIsMoving] = useState(false);
-  
-  const [deviceToDelete, setDeviceToDelete] = useState<OnuData | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
+  const [filterShelfId, setFilterShelfId] = useState<string | null>(null);
 
-  const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
-  const { isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
+  const [foundDevice, setFoundDevice] = useState<OnuData | null>(null);
+  const [shelfDevices, setShelfDevices] = useState<OnuData[]>([]);
 
   const deviceForm = useForm<DeviceFormValues>({
     resolver: zodResolver(deviceSchema),
     defaultValues: { ids: '', shelfId: '', type: undefined },
   });
+
+  useEffect(() => {
+    setFoundDevice(null);
+    setSearchError(null);
+    if (filterShelfId) {
+      const devices = allOnus.filter(onu => onu.shelfId === filterShelfId);
+      setShelfDevices(devices);
+    } else {
+      setShelfDevices([]);
+    }
+  }, [filterShelfId, allOnus]);
+
 
   const handleAddDevices = async (values: DeviceFormValues) => {
     setIsAddingDevice(true);
@@ -185,10 +267,13 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     if (!managementSearchTerm.trim()) {
         setFoundDevice(null);
         setSearchError(null);
+        setFilterShelfId(null);
         return;
     }
     setIsSearching(true);
     setSearchError(null);
+    setFilterShelfId(null);
+    setShelfDevices([]);
 
     const device = allOnus.find(d => d.id === managementSearchTerm.trim());
     
@@ -203,24 +288,22 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     }, 500);
   };
   
-  const handleMoveDevice = async () => {
-    if (!foundDevice || !targetShelfId || !profile) return;
+  const handleMoveDevice = async (deviceToMove: OnuData, newShelfId: string) => {
+    if (!profile) return;
     
-    const originalShelf = allShelves.find(s => s.id === foundDevice.shelfId);
-    const newShelf = allShelves.find(s => s.id === targetShelfId);
+    const originalShelf = allShelves.find(s => s.id === deviceToMove.shelfId);
+    const newShelf = allShelves.find(s => s.id === newShelfId);
 
     if (!originalShelf || !newShelf) {
         toast({ variant: "destructive", title: "Error", description: "Estante no encontrado." });
         return;
     }
     
-    setIsMoving(true);
     const batch = writeBatch(firestore);
     
-    // Update ONU document
-    const onuRef = doc(firestore, 'onus', foundDevice.id);
+    const onuRef = doc(firestore, 'onus', deviceToMove.id);
     const historyEntry: OnuHistoryEntry = {
-        action: 'restored', // Using 'restored' as it implies a change of state/location
+        action: 'restored',
         date: new Date().toISOString(),
         userId: profile.id,
         userName: profile.name,
@@ -229,10 +312,9 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     batch.update(onuRef, {
         shelfId: newShelf.id,
         shelfName: newShelf.name,
-        history: [...(foundDevice.history || []), historyEntry]
+        history: [...(deviceToMove.history || []), historyEntry]
     });
     
-    // Update shelves counters
     const oldShelfRef = doc(firestore, 'shelves', originalShelf.id);
     batch.update(oldShelfRef, { itemCount: increment(-1) });
     
@@ -241,24 +323,19 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     
     await batch.commit();
 
-    toast({ title: "Dispositivo movido", description: `${foundDevice.id} movido a ${newShelf.name}.`});
-    setIsMoving(false);
-    setFoundDevice(null);
-    setManagementSearchTerm('');
-    setTargetShelfId(null);
+    toast({ title: "Dispositivo movido", description: `${deviceToMove.id} movido a ${newShelf.name}.`});
+
+    // Reset view
+    if (foundDevice) setFoundDevice(null);
+    if (filterShelfId) setFilterShelfId(filterShelfId); // Re-trigger filter effect
   };
   
-  const handleDeleteDevice = async () => {
-    if (!deviceToDelete) return;
-    setIsDeleting(true);
-
+  const handleDeleteDevice = async (deviceToDelete: OnuData) => {
     const batch = writeBatch(firestore);
 
-    // Delete the device
     const deviceRef = doc(firestore, 'onus', deviceToDelete.id);
     batch.delete(deviceRef);
 
-    // Decrement shelf counter
     const shelfRef = doc(firestore, 'shelves', deviceToDelete.shelfId);
     batch.update(shelfRef, { itemCount: increment(-1) });
 
@@ -266,22 +343,10 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     
     toast({ variant: 'destructive', title: "Dispositivo Eliminado", description: `El dispositivo ${deviceToDelete.id} ha sido eliminado permanentemente.`});
 
-    setIsDeleting(false);
-    setDeviceToDelete(null);
-    setFoundDevice(null);
-    setManagementSearchTerm('');
+    // Reset view
+    if (foundDevice) setFoundDevice(null);
+    if (filterShelfId) setFilterShelfId(filterShelfId); // Re-trigger filter effect
   };
-
-
-  const availableShelvesForMove = useMemo(() => {
-    if (!foundDevice) return [];
-    return allShelves.filter(shelf => 
-        shelf.id !== foundDevice.shelfId &&
-        shelf.type === foundDevice.type &&
-        shelf.itemCount < shelf.capacity
-    );
-  }, [foundDevice, allShelves]);
-
 
   const loadHistory = useMemo(() => {
     const events: Record<string, LoadEvent> = {};
@@ -338,9 +403,7 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
             Ingresa uno o varios IDs de dispositivo separados por espacios, comas o saltos de línea.
           </CardDescription>
         </CardHeader>
-        {isLoadingShelves ? (
-            <CardContent><Loader2 className="animate-spin"/></CardContent>
-        ) : !allShelves || allShelves.length === 0 ? (
+        {!allShelves || allShelves.length === 0 ? (
             <CardContent>
                 <div className="text-center py-8 border-2 border-dashed rounded-lg bg-muted/50">
                     <AlertTriangle className="h-8 w-8 mx-auto text-muted-foreground" />
@@ -487,95 +550,80 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
       <Card>
         <CardHeader>
           <CardTitle className='flex items-center gap-2'><Move className="h-5 w-5 text-primary"/>Gestión Individual de Dispositivos</CardTitle>
-          <CardDescription>Busca un dispositivo por ID para moverlo a otro estante o para eliminarlo del inventario.</CardDescription>
+          <CardDescription>Busca un dispositivo por su ID o filtra por estante para moverlo o eliminarlo del inventario.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
+          <div className="flex flex-col md:flex-row gap-2">
             <div className="relative flex-grow">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Ingresa un ID de dispositivo"
+                placeholder="Buscar por ID de dispositivo..."
                 value={managementSearchTerm}
-                onChange={(e) => {
-                  setManagementSearchTerm(e.target.value);
-                  setFoundDevice(null);
-                  setSearchError(null);
-                }}
+                onChange={(e) => setManagementSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
                 className="pl-10"
               />
             </div>
             <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm}>
               {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Buscar
+              Buscar por ID
             </Button>
+            <div className="flex items-center gap-2">
+                <div className="border-l h-6 hidden md:block mx-2"></div>
+                <Label htmlFor="shelf-filter" className="text-sm shrink-0">o Filtrar por Estante:</Label>
+                <Select onValueChange={(value) => setFilterShelfId(value === 'none' ? null : value)} value={filterShelfId || 'none'}>
+                    <SelectTrigger id="shelf-filter" className="w-full md:w-[250px]">
+                        <SelectValue placeholder="Seleccionar estante..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="none">-- Ninguno --</SelectItem>
+                        {allShelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map(shelf => (
+                            <SelectItem key={shelf.id} value={shelf.id}>
+                                {shelf.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
           </div>
           
-          {isSearching && <div className="text-center p-4"><Loader2 className="animate-spin text-primary"/></div>}
+          <div className="pt-4 space-y-4">
+            {isSearching && <div className="text-center p-4"><Loader2 className="animate-spin text-primary"/></div>}
 
-          {searchError && (
-              <div className="text-center p-4 text-sm text-destructive">{searchError}</div>
-          )}
-          
-          {foundDevice && (
-              <div className="p-4 border rounded-lg space-y-4 bg-muted/30">
-                  <div>
-                      <h4 className="font-semibold">Dispositivo Encontrado</h4>
-                      <p className="text-sm font-mono text-muted-foreground break-all">{foundDevice.id}</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                      <div>
-                        <p className="text-sm font-medium">Estante Actual: <span className="font-bold text-primary">{foundDevice.shelfName}</span></p>
-                        <p className="text-sm font-medium">Tipo: <span className="font-bold">{foundDevice.type.toUpperCase()}</span></p>
-                      </div>
-                      <div className="flex items-end gap-2">
-                          <div className="flex-grow">
-                            <Label htmlFor="move-shelf" className="text-xs">Mover a Nuevo Estante</Label>
-                            <Select onValueChange={setTargetShelfId} disabled={availableShelvesForMove.length === 0}>
-                                <SelectTrigger id="move-shelf">
-                                    <SelectValue placeholder={availableShelvesForMove.length > 0 ? "Seleccionar estante..." : "No hay estantes disponibles"} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {availableShelvesForMove.map(shelf => (
-                                        <SelectItem key={shelf.id} value={shelf.id}>
-                                            {shelf.name} ({shelf.itemCount}/{shelf.capacity})
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                          </div>
-                          <Button onClick={handleMoveDevice} disabled={!targetShelfId || isMoving}>
-                              {isMoving ? <Loader2 className="h-4 w-4 animate-spin"/> : <Move className="h-4 w-4"/>}
-                          </Button>
-                      </div>
-                  </div>
-                   <div className="border-t pt-4 mt-4 flex justify-end">
-                      <AlertDialog open={!!deviceToDelete} onOpenChange={(open) => !open && setDeviceToDelete(null)}>
-                          <AlertDialogTrigger asChild>
-                              <Button variant="destructive" size="sm" onClick={() => setDeviceToDelete(foundDevice)}>
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Eliminar Dispositivo
-                              </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                              <AlertDialogHeader>
-                                  <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                      Esta acción es permanente. El dispositivo <strong className="font-mono break-all">{deviceToDelete?.id}</strong> será eliminado del inventario y no se podrá recuperar.
-                                  </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                  <AlertDialogAction onClick={handleDeleteDevice} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90">
-                                      {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                      Sí, eliminar permanentemente
-                                  </AlertDialogAction>
-                              </AlertDialogFooter>
-                          </AlertDialogContent>
-                      </AlertDialog>
-                  </div>
-              </div>
-          )}
+            {searchError && (
+                <div className="text-center p-4 text-sm text-destructive">{searchError}</div>
+            )}
+            
+            {foundDevice && (
+                <DeviceRow 
+                    device={foundDevice} 
+                    allShelves={allShelves} 
+                    onMove={handleMoveDevice}
+                    onDelete={handleDeleteDevice}
+                />
+            )}
+
+            {shelfDevices.length > 0 && (
+                <div className='space-y-4'>
+                    <h4 className="font-semibold text-center md:text-left">
+                        {shelfDevices.length} dispositivo(s) en el estante {allShelves.find(s => s.id === filterShelfId)?.name}
+                    </h4>
+                    <ScrollArea className="h-96">
+                        <div className='space-y-2 pr-4'>
+                            {shelfDevices.map(device => (
+                                <DeviceRow 
+                                    key={device.id}
+                                    device={device} 
+                                    allShelves={allShelves} 
+                                    onMove={handleMoveDevice}
+                                    onDelete={handleDeleteDevice}
+                                />
+                            ))}
+                        </div>
+                    </ScrollArea>
+                </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </section>
