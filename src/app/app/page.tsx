@@ -178,7 +178,7 @@ export default function AppPage() {
             </div>
           </div>
         </header>
-        <main className="container mx-auto px-4 py-8 md:px-6 md:py-12">
+        <main className="w-full max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
             {renderActiveView()}
         </main>
       </SidebarInset>
