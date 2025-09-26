@@ -235,19 +235,22 @@ export function OnuFinder({
         <div>
           <CardHeader className="pb-2">
              <div className="flex justify-between items-start">
-                <CardTitle className="flex items-start text-base text-primary break-all font-mono">
-                <Tag className="mr-2 h-4 w-4 flex-shrink-0 mt-1"/>
-                <div>
-                    {isExactMatch ? (
-                    <>
-                        <span className="text-muted-foreground">{idPrefix}</span>
-                        <span className="font-bold text-lg text-foreground">{idSuffix}</span>
-                    </>
-                    ) : (
-                    onuId
-                    )}
+                <div className="flex items-center gap-2">
+                    <Tag className="mr-1 h-4 w-4 flex-shrink-0 mt-1 text-primary"/>
+                    <CardTitle className="flex items-baseline text-base text-primary break-all font-mono">
+                        <div>
+                            {isExactMatch ? (
+                            <>
+                                <span className="text-muted-foreground">{idPrefix}</span>
+                                <span className="font-bold text-lg text-foreground">{idSuffix}</span>
+                            </>
+                            ) : (
+                            onuId
+                            )}
+                        </div>
+                    </CardTitle>
+                    <Badge variant={row.type === 'onu' ? 'outline' : 'secondary'} className="text-xs">{row.type.toUpperCase()}</Badge>
                 </div>
-                </CardTitle>
                 <Dialog>
                     <DialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -376,22 +379,35 @@ export function OnuFinder({
     <div className="space-y-4">
         {shelves.length > 0 ? (
             <Accordion type="single" collapsible className="w-full" defaultValue={shelves.length > 0 ? shelves[0].shelfName : undefined}>
-                {shelves.map((shelfGroup) => (
-                    <AccordionItem value={shelfGroup.shelfName} key={shelfGroup.shelfName}>
-                        <AccordionTrigger>
-                            <div className="flex items-center gap-3">
-                                <Server className="h-5 w-5 text-primary" />
-                                <span className="font-medium">{shelfGroup.shelfName}</span>
-                                <Badge variant="secondary">{shelfGroup.onus.length} dispositivos</Badge>
-                            </div>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-                                {shelfGroup.onus.map((onu, index) => renderOnuCard(onu, index))}
-                            </div>
-                        </AccordionContent>
-                    </AccordionItem>
-                ))}
+                {shelves.map((shelfGroup) => {
+                    const onuCount = shelfGroup.onus.filter(o => o.type === 'onu').length;
+                    const stbCount = shelfGroup.onus.filter(o => o.type === 'stb').length;
+                    
+                    let countText = '';
+                    if (onuCount > 0) countText += `${onuCount} ONU(s)`;
+                    if (stbCount > 0) {
+                        if (onuCount > 0) countText += ' / ';
+                        countText += `${stbCount} STB(s)`;
+                    }
+                    if (countText === '') countText = '0 dispositivos';
+
+                    return (
+                        <AccordionItem value={shelfGroup.shelfName} key={shelfGroup.shelfName}>
+                            <AccordionTrigger>
+                                <div className="flex items-center gap-3">
+                                    <Server className="h-5 w-5 text-primary" />
+                                    <span className="font-medium">{shelfGroup.shelfName}</span>
+                                    <Badge variant="secondary">{countText}</Badge>
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+                                    {shelfGroup.onus.map((onu, index) => renderOnuCard(onu, index))}
+                                </div>
+                            </AccordionContent>
+                        </AccordionItem>
+                    )
+                })}
             </Accordion>
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
