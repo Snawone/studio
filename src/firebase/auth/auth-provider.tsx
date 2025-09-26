@@ -53,41 +53,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [auth, router, pathname]);
 
   useEffect(() => {
+    let unsubscribeProfile: () => void = () => {};
+
     if (user) {
-      const userDocRef = doc(firestore, 'users', user.uid);
-      const unsubscribe = onSnapshot(userDocRef, (doc) => {
-        if (doc.exists()) {
-          const userProfileData = { id: doc.id, ...doc.data() } as UserProfile;
-          
-          // Hardcoded admin check
-          if (user.email === 'santiagowyka@gmail.com') {
-            userProfileData.isAdmin = true;
-          }
+      // Get custom claims first
+      user.getIdTokenResult(true).then(idTokenResult => {
+        const isAdmin = idTokenResult.claims.isAdmin === true;
 
-          setProfile(userProfileData);
+        // Now listen to profile changes
+        const userDocRef = doc(firestore, 'users', user.uid);
+        unsubscribeProfile = onSnapshot(userDocRef, (doc) => {
+          if (doc.exists()) {
+            const userProfileData = { id: doc.id, ...doc.data() } as UserProfile;
+            userProfileData.isAdmin = isAdmin; // Set isAdmin from the token claim
+            setProfile(userProfileData);
 
-          // If not on an app page, redirect to app
-          if (!pathname.startsWith('/app')) {
-            router.push('/app');
+            if (!pathname.startsWith('/app')) {
+              router.push('/app');
+            }
+          } else {
+              setProfile(null);
           }
-        } else {
-            // This can happen briefly on signup. If it persists, there's an issue.
-            // For now, we clear the profile and let the UI decide what to do.
-            setProfile(null);
-        }
-        setAuthLoading(false);
-      }, (error) => {
-          console.error("Error fetching user profile:", error);
           setAuthLoading(false);
-          setProfile(null);
-          // Optional: Force logout if profile can't be fetched
-          // signOut(auth);
+        }, (error) => {
+            console.error("Error fetching user profile:", error);
+            setAuthLoading(false);
+            setProfile(null);
+        });
+      }).catch(error => {
+        console.error("Error getting ID token result:", error);
+        setAuthLoading(false);
       });
-      return () => unsubscribe();
     } else {
-        // No user, no profile fetching needed.
         setAuthLoading(false);
     }
+    
+    return () => unsubscribeProfile();
   }, [user, firestore, router, pathname, auth]);
 
   const logout = async () => {

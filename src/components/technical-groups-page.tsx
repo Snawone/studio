@@ -196,7 +196,7 @@ export function TechnicalGroupsPage() {
       description: `${selectedUser.name} ha sido añadido al grupo.`,
     });
     setIsSubmitting(false);
-setIsAddTechnicianOpen(null);
+    setIsAddTechnicianOpen(null);
     technicianForm.reset();
   };
 
@@ -218,10 +218,10 @@ setIsAddTechnicianOpen(null);
     const group = groups?.find(g => g.id === groupId);
     if (!group || !users) return [];
     const technicianIds = group.technicians.map(t => t.userId);
-    return users.filter(u => !technicianIds.includes(u.id) && u.id !== profile?.id);
+    return users.filter(u => !technicianIds.includes(u.id));
   };
   
-    if (isLoadingGroups || isLoadingUsers || !profile) {
+    if (isLoadingGroups || isLoadingUsers) {
     return (
         <div className="flex h-64 w-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
