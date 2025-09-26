@@ -33,20 +33,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setAuthLoading(true);
       if (firebaseUser) {
-        setUser(firebaseUser);
-        
-        // This is a temporary measure to ensure the primary user is always an admin.
-        // A more robust solution uses custom claims set by a backend function.
-        const isHardcodedAdmin = firebaseUser.email === 'santiagowyka@gmail.com';
-        
-        const idTokenResult = await firebaseUser.getIdTokenResult();
+        // Force refresh the token to get the latest custom claims.
+        const idTokenResult = await firebaseUser.getIdTokenResult(true);
         const isAdminClaim = !!idTokenResult.claims.isAdmin;
-
+        const isHardcodedAdmin = firebaseUser.email === 'santiagowyka@gmail.com';
         const effectiveIsAdmin = isHardcodedAdmin || isAdminClaim;
         
+        setUser(firebaseUser);
+
         const userDocRef = doc(firestore, 'users', firebaseUser.uid);
         const unsubscribeProfile = onSnapshot(userDocRef, (docSnap: DocumentSnapshot) => {
           let userProfileData: UserProfile | null = null;
@@ -77,18 +74,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         });
         
         return () => unsubscribeProfile();
-
       } else {
         setUser(null);
         setProfile(null);
         setAuthLoading(false);
         if (pathname.startsWith('/app')) {
-            router.push('/');
+          router.push('/');
         }
       }
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, [auth, firestore, router, pathname]);
 
   const logout = async () => {
