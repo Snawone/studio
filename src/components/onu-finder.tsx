@@ -153,11 +153,14 @@ export function OnuFinder({
   };
 
   const filteredResults = useMemo(() => {
-    if (!searchTerm) return onus;
-    return onus.filter((row) => 
+    const viewFilter = activeView === 'activas' ? 'active' : 'removed';
+    const relevantOnus = onus.filter(onu => onu.status === viewFilter);
+    if (!searchTerm) return relevantOnus;
+    
+    return relevantOnus.filter((row) => 
         row.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
-  }, [searchTerm, onus]);
+  }, [searchTerm, onus, activeView]);
   
   const shelves: ShelfGroup[] = useMemo(() => {
     if (activeView !== 'activas') return [];
@@ -296,7 +299,7 @@ export function OnuFinder({
                         <span className="text-foreground text-xs">{formatDate(row.addedDate, true)}</span>
                     </p>
                     {creatorName && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-muted-foreground mt-1">
                             Por: {creatorName}
                         </p>
                     )}
@@ -565,3 +568,5 @@ export function OnuFinder({
     </section>
   );
 }
+
+    
