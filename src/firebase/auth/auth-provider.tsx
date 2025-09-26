@@ -12,7 +12,6 @@ import { doc, onSnapshot, DocumentSnapshot } from 'firebase/firestore';
 
 import { useAuth, useFirestore } from '@/firebase/provider';
 import { type UserProfile } from '@/lib/data';
-import { setAdminClaim } from '@/ai/flows/set-admin-claim';
 
 interface AuthContextType {
   user: User | null;
@@ -37,37 +36,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setAuthLoading(true);
       if (firebaseUser) {
-
-        const isHardcodedAdminEmail = firebaseUser.email === 'santiagowyka@gmail.com';
-        
-        // This is the critical fix. If the user is the hardcoded admin, we ensure
-        // the custom claim is set on their auth token. This only needs to run once,
-        // but running it on each login is a safe way to ensure it's set.
-        if (isHardcodedAdminEmail) {
-            await setAdminClaim({ uid: firebaseUser.uid, isAdmin: true });
-        }
-
-        // Force refresh the token to get the latest custom claims.
-        const idTokenResult = await firebaseUser.getIdTokenResult(true);
-        const isAdminClaim = !!idTokenResult.claims.isAdmin;
-        
         setUser(firebaseUser);
 
         const userDocRef = doc(firestore, 'users', firebaseUser.uid);
         const unsubscribeProfile = onSnapshot(userDocRef, (docSnap: DocumentSnapshot) => {
-          let userProfileData: UserProfile | null = null;
           if (docSnap.exists()) {
-            userProfileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+            setProfile({ id: docSnap.id, ...docSnap.data() } as UserProfile);
+          } else {
+            // If the user exists in Auth but not in Firestore, we can create a basic profile.
+            // This might happen if Firestore data is wiped or during initial signup.
+            setProfile({
+              id: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              name: firebaseUser.displayName || 'Usuario',
+              searchList: [],
+            });
           }
-          
-          setProfile(userProfileData ? { ...userProfileData, isAdmin: isAdminClaim } : {
-             id: firebaseUser.uid,
-             email: firebaseUser.email || '',
-             name: firebaseUser.displayName || 'Usuario',
-             searchList: [],
-             isAdmin: isAdminClaim
-          });
-
           setAuthLoading(false);
           if (!pathname.startsWith('/app')) {
             router.push('/app');

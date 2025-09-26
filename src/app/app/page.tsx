@@ -123,22 +123,18 @@ export default function AppPage() {
                 Historial
               </SidebarMenuButton>
             </SidebarMenuItem>
-            {profile.isAdmin && (
-              <>
-                <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => setActiveView('estantes')} isActive={activeView === 'estantes'} tooltip='Estantes'>
-                        <Warehouse />
-                        Estantes
-                    </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => setActiveView('cargar-stock')} isActive={activeView === 'cargar-stock'} tooltip='Cargar Stock'>
-                        <PackagePlus />
-                        Cargar Stock
-                    </SidebarMenuButton>
-                </SidebarMenuItem>
-              </>
-            )}
+            <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => setActiveView('estantes')} isActive={activeView === 'estantes'} tooltip='Estantes'>
+                    <Warehouse />
+                    Estantes
+                </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+                <SidebarMenuButton onClick={() => setActiveView('cargar-stock')} isActive={activeView === 'cargar-stock'} tooltip='Cargar Stock'>
+                    <PackagePlus />
+                    Cargar Stock
+                </SidebarMenuButton>
+            </SidebarMenuItem>
             <SidebarMenuItem>
                 <SidebarMenuButton onClick={() => setActiveView('grupos-tecnicos')} isActive={activeView === 'grupos-tecnicos'} tooltip='Grupos Técnicos'>
                     <Users />

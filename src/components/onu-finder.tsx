@@ -330,12 +330,9 @@ export function OnuFinder({
               size="sm"
               className="w-full text-green-600 hover:text-green-700 hover:bg-green-50 border-green-600/50"
               onClick={() => {
-                if (profile?.isAdmin) {
-                  setOnuToManage(row);
-                  setIsConfirmRestoreOpen(true);
-                }
+                setOnuToManage(row);
+                setIsConfirmRestoreOpen(true);
               }}
-              disabled={!profile?.isAdmin}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               Devolver
@@ -346,12 +343,9 @@ export function OnuFinder({
               size="sm"
               className="w-full text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/50"
               onClick={() => {
-                if (profile?.isAdmin) {
-                  setOnuToManage(row);
-                  setIsConfirmRetireOpen(true);
-                }
+                setOnuToManage(row);
+                setIsConfirmRetireOpen(true);
               }}
-              disabled={!profile?.isAdmin}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Retirar
@@ -415,7 +409,7 @@ export function OnuFinder({
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
                 <p className="text-muted-foreground">
-                  No hay ONUs activas para mostrar. {profile?.isAdmin ? "Ve a 'Cargar Stock' para empezar." : "Espera a que un administrador cargue los datos."}
+                  No hay ONUs activas para mostrar. Ve a 'Cargar Stock' para empezar.
                 </p>
             </div>
         )}
@@ -568,5 +562,3 @@ export function OnuFinder({
     </section>
   );
 }
-
-    

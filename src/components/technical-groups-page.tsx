@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -154,43 +155,41 @@ export function TechnicalGroupsPage() {
         </p>
       </div>
       
-       {profile?.isAdmin && (
-         <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><PlusCircle className="h-5 w-5 text-primary"/>Crear Nuevo Grupo</CardTitle>
-            </CardHeader>
-            <Form {...createGroupForm}>
-                <form onSubmit={createGroupForm.handleSubmit(handleCreateGroup)}>
-                    <CardContent>
-                        <FormField
-                          control={createGroupForm.control}
-                          name="name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Nombre del Grupo</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Ej: Equipo de Instalaciones A" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                    </CardContent>
-                    <CardFooter>
-                        <Button type="submit" disabled={isSubmittingGroup}>
-                            {isSubmittingGroup && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {isSubmittingGroup ? 'Creando...' : 'Crear Grupo'}
-                        </Button>
-                    </CardFooter>
-                </form>
-            </Form>
-          </Card>
-       )}
+       <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><PlusCircle className="h-5 w-5 text-primary"/>Crear Nuevo Grupo</CardTitle>
+          </CardHeader>
+          <Form {...createGroupForm}>
+              <form onSubmit={createGroupForm.handleSubmit(handleCreateGroup)}>
+                  <CardContent>
+                      <FormField
+                        control={createGroupForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Nombre del Grupo</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Ej: Equipo de Instalaciones A" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                  </CardContent>
+                  <CardFooter>
+                      <Button type="submit" disabled={isSubmittingGroup}>
+                          {isSubmittingGroup && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          {isSubmittingGroup ? 'Creando...' : 'Crear Grupo'}
+                      </Button>
+                  </CardFooter>
+              </form>
+          </Form>
+        </Card>
       
       <div>
         <h3 className="text-lg font-semibold mb-4">Grupos Existentes</h3>
         {technicalGroups && technicalGroups.length > 0 ? (
-          <Accordion type="single" collapsible className="w-full" defaultValue={technicalGroups[0].id}>
+          <Accordion type="single" collapsible className="w-full" defaultValue={technicalGroups.length > 0 ? technicalGroups[0].id : undefined}>
             {technicalGroups.sort((a,b) => a.name.localeCompare(b.name)).map(group => (
               <AccordionItem value={group.id} key={group.id}>
                 <AccordionTrigger>
@@ -211,11 +210,9 @@ export function TechnicalGroupsPage() {
                                     {group.technicians.sort((a,b) => a.userName.localeCompare(b.userName)).map(tech => (
                                         <li key={tech.userId} className="flex items-center justify-between text-sm bg-muted/50 p-2 rounded-md">
                                             <span>{tech.userName}</span>
-                                            {profile?.isAdmin && (
-                                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveTechnician(group.id, tech.userId)}>
-                                                    <UserMinus className="h-4 w-4 text-destructive"/>
-                                                </Button>
-                                            )}
+                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveTechnician(group.id, tech.userId)}>
+                                                <UserMinus className="h-4 w-4 text-destructive"/>
+                                            </Button>
                                         </li>
                                     ))}
                                 </ul>
@@ -223,54 +220,51 @@ export function TechnicalGroupsPage() {
                                 <p className="text-sm text-muted-foreground">Aún no hay técnicos en este grupo.</p>
                             )}
                         </div>
-                        {profile?.isAdmin && (
-                            <>
-                                <Form {...addTechnicianForm}>
-                                    <form onSubmit={addTechnicianForm.handleSubmit((values) => handleAddTechnician(group.id, values))} className="space-y-4">
-                                        <FormField
-                                        control={addTechnicianForm.control}
-                                        name="email"
-                                        render={({ field }) => (
-                                            <FormItem>
-                                            <FormLabel>Añadir técnico por email</FormLabel>
-                                            <div className="flex gap-2">
-                                                <FormControl>
-                                                    <Input placeholder="correo@ejemplo.com" {...field} />
-                                                </FormControl>
-                                                <Button type="submit" disabled={isSubmittingTechnician === group.id}>
-                                                    {isSubmittingTechnician === group.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserPlus className="h-4 w-4"/>}
-                                                </Button>
-                                            </div>
-                                            <FormMessage />
-                                            </FormItem>
-                                        )}
-                                        />
-                                    </form>
-                                </Form>
-                                <div className="border-t pt-4">
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
-                                            <Button variant="destructive" size="sm">
-                                                <Trash2 className="mr-2 h-4 w-4" />
-                                                Eliminar Grupo
-                                            </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent>
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                                                <AlertDialogDescription>
-                                                    Esta acción es permanente y eliminará el grupo <strong>{group.name}</strong> y todos sus técnicos.
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                                <AlertDialogAction onClick={() => handleDeleteGroup(group)}>Sí, eliminar</AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                </div>
-                            </>
-                        )}
+                        
+                        <Form {...addTechnicianForm}>
+                            <form onSubmit={addTechnicianForm.handleSubmit((values) => handleAddTechnician(group.id, values))} className="space-y-4">
+                                <FormField
+                                control={addTechnicianForm.control}
+                                name="email"
+                                render={({ field }) => (
+                                    <FormItem>
+                                    <FormLabel>Añadir técnico por email</FormLabel>
+                                    <div className="flex gap-2">
+                                        <FormControl>
+                                            <Input placeholder="correo@ejemplo.com" {...field} />
+                                        </FormControl>
+                                        <Button type="submit" disabled={isSubmittingTechnician === group.id}>
+                                            {isSubmittingTechnician === group.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserPlus className="h-4 w-4"/>}
+                                        </Button>
+                                    </div>
+                                    <FormMessage />
+                                    </FormItem>
+                                )}
+                                />
+                            </form>
+                        </Form>
+                        <div className="border-t pt-4">
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="destructive" size="sm">
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Eliminar Grupo
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Esta acción es permanente y eliminará el grupo <strong>{group.name}</strong> y todos sus técnicos.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDeleteGroup(group)}>Sí, eliminar</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        </div>
                     </div>
                 </AccordionContent>
               </AccordionItem>

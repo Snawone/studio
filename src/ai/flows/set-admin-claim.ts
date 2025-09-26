@@ -40,11 +40,6 @@ const setAdminClaimFlow = ai.defineFlow(
         if (!auth) {
             throw new Error('Authentication is required to perform this action.');
         }
-        // IMPORTANT: The authorization check to see if the CALLER is an admin
-        // has been removed to prevent a circular dependency where you can't make the
-        // first admin. The primary user is now hardcoded as an admin in the AuthProvider
-        // as a fail-safe. In a production app, you might have a different way
-        // to bootstrap the first admin.
     },
   },
   async ({ uid, isAdmin }) => {

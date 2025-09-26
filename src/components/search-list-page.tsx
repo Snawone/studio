@@ -136,7 +136,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
           </p>
         </div>
         {searchListOnus.length > 0 && (
-            <Button onClick={() => setIsConfirmRetireAllOpen(true)} disabled={!profile?.isAdmin}>
+            <Button onClick={() => setIsConfirmRetireAllOpen(true)}>
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Marcar todas como encontradas
             </Button>
@@ -197,7 +197,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
                     size="sm"
                     className="w-full"
                     onClick={() => setOnuToRetire(onu)}
-                    disabled={onu.status === 'removed' || !profile?.isAdmin}
+                    disabled={onu.status === 'removed'}
                   >
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Encontrada
