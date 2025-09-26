@@ -248,8 +248,8 @@ export function OnuFinder({
                             onuId
                             )}
                         </div>
+                        <Badge variant={row.type === 'onu' ? 'outline' : 'secondary'} className="text-xs ml-2">{row.type.toUpperCase()}</Badge>
                     </CardTitle>
-                    <Badge variant={row.type === 'onu' ? 'outline' : 'secondary'} className="text-xs">{row.type.toUpperCase()}</Badge>
                 </div>
                 <Dialog>
                     <DialogTrigger asChild>
@@ -565,3 +565,5 @@ export function OnuFinder({
     </section>
   );
 }
+
+    
