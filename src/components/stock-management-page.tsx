@@ -7,12 +7,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { doc, getDocs, writeBatch, collection, query, where, documentId } from 'firebase/firestore';
-import { PackagePlus, Loader2, AlertTriangle, Server, Box, History, User, Calendar, ClipboardList } from 'lucide-react';
+import { doc, getDocs, writeBatch, collection, query, where, documentId, increment, deleteDoc } from 'firebase/firestore';
+import { PackagePlus, Loader2, AlertTriangle, Server, Box, History, User, Calendar, ClipboardList, Search, Move, Trash2 } from 'lucide-react';
 import { type Shelf, type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
@@ -24,6 +25,16 @@ import {
   DialogTrigger,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -38,6 +49,7 @@ type DeviceFormValues = z.infer<typeof deviceSchema>;
 
 interface StockManagementPageProps {
   allOnus: OnuData[];
+  allShelves: Shelf[];
 }
 
 type LoadEvent = {
@@ -49,14 +61,26 @@ type LoadEvent = {
   deviceIds: string[];
 }
 
-export function StockManagementPage({ allOnus }: StockManagementPageProps) {
+export function StockManagementPage({ allOnus, allShelves }: StockManagementPageProps) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { profile } = useAuthContext();
   const [isAddingDevice, setIsAddingDevice] = useState(false);
+  
+  const [managementSearchTerm, setManagementSearchTerm] = useState('');
+  const [foundDevice, setFoundDevice] = useState<OnuData | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  
+  const [targetShelfId, setTargetShelfId] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
+  
+  const [deviceToDelete, setDeviceToDelete] = useState<OnuData | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
 
   const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
-  const { data: allShelves, isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
+  const { isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
 
   const deviceForm = useForm<DeviceFormValues>({
     resolver: zodResolver(deviceSchema),
@@ -154,6 +178,108 @@ export function StockManagementPage({ allOnus }: StockManagementPageProps) {
         deviceForm.setFocus('ids');
     }
   };
+
+  const handleSearchDevice = () => {
+    if (!managementSearchTerm.trim()) {
+        setFoundDevice(null);
+        setSearchError(null);
+        return;
+    }
+    setIsSearching(true);
+    setSearchError(null);
+
+    const device = allOnus.find(d => d.id === managementSearchTerm.trim());
+    
+    setTimeout(() => {
+        if (device) {
+            setFoundDevice(device);
+        } else {
+            setFoundDevice(null);
+            setSearchError("No se encontró ningún dispositivo con ese ID.");
+        }
+        setIsSearching(false);
+    }, 500);
+  };
+  
+  const handleMoveDevice = async () => {
+    if (!foundDevice || !targetShelfId || !profile) return;
+    
+    const originalShelf = allShelves.find(s => s.id === foundDevice.shelfId);
+    const newShelf = allShelves.find(s => s.id === targetShelfId);
+
+    if (!originalShelf || !newShelf) {
+        toast({ variant: "destructive", title: "Error", description: "Estante no encontrado." });
+        return;
+    }
+    
+    setIsMoving(true);
+    const batch = writeBatch(firestore);
+    
+    // Update ONU document
+    const onuRef = doc(firestore, 'onus', foundDevice.id);
+    const historyEntry: OnuHistoryEntry = {
+        action: 'restored', // Using 'restored' as it implies a change of state/location
+        date: new Date().toISOString(),
+        userId: profile.id,
+        userName: profile.name,
+        description: `Dispositivo movido del estante ${originalShelf.name} a ${newShelf.name}.`
+    };
+    batch.update(onuRef, {
+        shelfId: newShelf.id,
+        shelfName: newShelf.name,
+        history: [...(foundDevice.history || []), historyEntry]
+    });
+    
+    // Update shelves counters
+    const oldShelfRef = doc(firestore, 'shelves', originalShelf.id);
+    batch.update(oldShelfRef, { itemCount: increment(-1) });
+    
+    const newShelfRef = doc(firestore, 'shelves', newShelf.id);
+    batch.update(newShelfRef, { itemCount: increment(1) });
+    
+    await batch.commit();
+
+    toast({ title: "Dispositivo movido", description: `${foundDevice.id} movido a ${newShelf.name}.`});
+    setIsMoving(false);
+    setFoundDevice(null);
+    setManagementSearchTerm('');
+    setTargetShelfId(null);
+  };
+  
+  const handleDeleteDevice = async () => {
+    if (!deviceToDelete) return;
+    setIsDeleting(true);
+
+    const batch = writeBatch(firestore);
+
+    // Delete the device
+    const deviceRef = doc(firestore, 'onus', deviceToDelete.id);
+    batch.delete(deviceRef);
+
+    // Decrement shelf counter
+    const shelfRef = doc(firestore, 'shelves', deviceToDelete.shelfId);
+    batch.update(shelfRef, { itemCount: increment(-1) });
+
+    await batch.commit();
+    
+    toast({ variant: 'destructive', title: "Dispositivo Eliminado", description: `El dispositivo ${deviceToDelete.id} ha sido eliminado permanentemente.`});
+
+    setIsDeleting(false);
+    setDeviceToDelete(null);
+    setFoundDevice(null);
+    setManagementSearchTerm('');
+  };
+
+
+  const availableShelvesForMove = useMemo(() => {
+    if (!foundDevice) return [];
+    return allShelves.filter(shelf => 
+        shelf.id !== foundDevice.shelfId &&
+        shelf.type === foundDevice.type &&
+        shelf.itemCount < shelf.capacity
+    );
+  }, [foundDevice, allShelves]);
+
 
   const loadHistory = useMemo(() => {
     const events: Record<string, LoadEvent> = {};
@@ -353,6 +479,101 @@ export function StockManagementPage({ allOnus }: StockManagementPageProps) {
                     <p className="text-sm text-muted-foreground">No hay historial de cargas todavía.</p>
                 </div>
             )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className='flex items-center gap-2'><Move className="h-5 w-5 text-primary"/>Gestión Individual de Dispositivos</CardTitle>
+          <CardDescription>Busca un dispositivo por ID para moverlo a otro estante o para eliminarlo del inventario.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <div className="relative flex-grow">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Ingresa un ID de dispositivo"
+                value={managementSearchTerm}
+                onChange={(e) => {
+                  setManagementSearchTerm(e.target.value);
+                  setFoundDevice(null);
+                  setSearchError(null);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
+                className="pl-10"
+              />
+            </div>
+            <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm}>
+              {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Buscar
+            </Button>
+          </div>
+          
+          {isSearching && <div className="text-center p-4"><Loader2 className="animate-spin text-primary"/></div>}
+
+          {searchError && (
+              <div className="text-center p-4 text-sm text-destructive">{searchError}</div>
+          )}
+          
+          {foundDevice && (
+              <div className="p-4 border rounded-lg space-y-4 bg-muted/30">
+                  <div>
+                      <h4 className="font-semibold">Dispositivo Encontrado</h4>
+                      <p className="text-sm font-mono text-muted-foreground break-all">{foundDevice.id}</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                      <div>
+                        <p className="text-sm font-medium">Estante Actual: <span className="font-bold text-primary">{foundDevice.shelfName}</span></p>
+                        <p className="text-sm font-medium">Tipo: <span className="font-bold">{foundDevice.type.toUpperCase()}</span></p>
+                      </div>
+                      <div className="flex items-end gap-2">
+                          <div className="flex-grow">
+                            <Label htmlFor="move-shelf" className="text-xs">Mover a Nuevo Estante</Label>
+                            <Select onValueChange={setTargetShelfId} disabled={availableShelvesForMove.length === 0}>
+                                <SelectTrigger id="move-shelf">
+                                    <SelectValue placeholder={availableShelvesForMove.length > 0 ? "Seleccionar estante..." : "No hay estantes disponibles"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {availableShelvesForMove.map(shelf => (
+                                        <SelectItem key={shelf.id} value={shelf.id}>
+                                            {shelf.name} ({shelf.itemCount}/{shelf.capacity})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                          </div>
+                          <Button onClick={handleMoveDevice} disabled={!targetShelfId || isMoving}>
+                              {isMoving ? <Loader2 className="h-4 w-4 animate-spin"/> : <Move className="h-4 w-4"/>}
+                          </Button>
+                      </div>
+                  </div>
+                   <div className="border-t pt-4 mt-4 flex justify-end">
+                      <AlertDialog open={!!deviceToDelete} onOpenChange={(open) => !open && setDeviceToDelete(null)}>
+                          <AlertDialogTrigger asChild>
+                              <Button variant="destructive" size="sm" onClick={() => setDeviceToDelete(foundDevice)}>
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Eliminar Dispositivo
+                              </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                              <AlertDialogHeader>
+                                  <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                      Esta acción es permanente. El dispositivo <strong className="font-mono break-all">{deviceToDelete?.id}</strong> será eliminado del inventario y no se podrá recuperar.
+                                  </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction onClick={handleDeleteDevice} disabled={isDeleting} className="bg-destructive hover:bg-destructive/90">
+                                      {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                      Sí, eliminar permanentemente
+                                  </AlertDialogAction>
+                              </AlertDialogFooter>
+                          </AlertDialogContent>
+                      </AlertDialog>
+                  </div>
+              </div>
+          )}
         </CardContent>
       </Card>
     </section>

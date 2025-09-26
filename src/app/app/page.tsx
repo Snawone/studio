@@ -70,7 +70,7 @@ export default function AppPage() {
       case 'estantes':
         return <ShelvesManagementPage />;
       case 'cargar-stock':
-        return <StockManagementPage allOnus={allOnus || []} />;
+        return <StockManagementPage allOnus={allOnus || []} allShelves={allShelves || []} />;
        case 'grupos-tecnicos':
         return <TechnicalGroupsPage />;
       case 'opciones':
