@@ -560,7 +560,7 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
                       value={managementSearchTerm}
                       onChange={(e) => setManagementSearchTerm(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
-                      className="pl-10 text-sm"
+                      className="pl-10"
                       />
                   </div>
                   <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm} className="shrink-0">
