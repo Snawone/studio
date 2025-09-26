@@ -16,24 +16,29 @@ import { Badge } from '@/components/ui/badge';
 function UserAdminRow({ user, currentUserProfile }: { user: UserProfile, currentUserProfile: UserProfile }) {
   const { toast } = useToast();
   const [isUpdating, setIsUpdating] = useState(false);
-  const [localIsAdmin, setLocalIsAdmin] = useState(user.isAdmin || false);
+  // Initialize localIsAdmin from the user prop to ensure it reflects the actual data
+  const [localIsAdmin, setLocalIsAdmin] = useState(!!user.isAdmin);
 
   const handleAdminChange = async (newIsAdmin: boolean) => {
     setIsUpdating(true);
     setLocalIsAdmin(newIsAdmin); // Optimistic update
     try {
-      await setAdminClaim({ uid: user.id, isAdmin: newIsAdmin });
-      toast({
-        title: "Permisos actualizados",
-        description: `${user.name} ahora ${newIsAdmin ? 'es' : 'no es'} administrador.`,
-      });
-    } catch (error) {
+      const result = await setAdminClaim({ uid: user.id, isAdmin: newIsAdmin });
+      if (result.success) {
+        toast({
+            title: "Permisos actualizados",
+            description: `${user.name} ahora ${newIsAdmin ? 'es' : 'no es'} administrador.`,
+        });
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error: any) {
       console.error("Error updating admin status:", error);
       setLocalIsAdmin(!newIsAdmin); // Revert on error
       toast({
         variant: 'destructive',
         title: "Error",
-        description: "No se pudieron actualizar los permisos.",
+        description: error.message || "No se pudieron actualizar los permisos.",
       });
     } finally {
       setIsUpdating(false);

@@ -38,9 +38,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (firebaseUser) {
         setUser(firebaseUser);
         
+        // This is a temporary measure to ensure the primary user is always an admin.
+        // A more robust solution uses custom claims set by a backend function.
+        const isHardcodedAdmin = firebaseUser.email === 'santiagowyka@gmail.com';
+        
         const idTokenResult = await firebaseUser.getIdTokenResult();
-        const isAdmin = !!idTokenResult.claims.isAdmin;
+        const isAdminClaim = !!idTokenResult.claims.isAdmin;
 
+        const effectiveIsAdmin = isHardcodedAdmin || isAdminClaim;
+        
         const userDocRef = doc(firestore, 'users', firebaseUser.uid);
         const unsubscribeProfile = onSnapshot(userDocRef, (docSnap: DocumentSnapshot) => {
           let userProfileData: UserProfile | null = null;
@@ -48,13 +54,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             userProfileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
           }
           
-          // Always merge the definite claim status from the token
-          setProfile(userProfileData ? { ...userProfileData, isAdmin } : {
+          setProfile(userProfileData ? { ...userProfileData, isAdmin: effectiveIsAdmin } : {
              id: firebaseUser.uid,
              email: firebaseUser.email || '',
              name: firebaseUser.displayName || 'Usuario',
              searchList: [],
-             isAdmin: isAdmin
+             isAdmin: effectiveIsAdmin
           });
 
           setAuthLoading(false);
