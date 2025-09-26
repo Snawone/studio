@@ -151,7 +151,7 @@ export function TechnicalGroupsPage() {
                     />
                 </CardContent>
                 <CardFooter>
-                    <Button type="submit" disabled={isSubmittingGroup}>
+                    <Button type="submit" disabled={true}>
                         {isSubmittingGroup && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {isSubmittingGroup ? 'Creando...' : 'Crear Grupo'}
                     </Button>
