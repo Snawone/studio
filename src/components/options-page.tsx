@@ -12,12 +12,14 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from 'xlsx';
 import { OnuData, Shelf, OnuHistoryEntry } from "@/lib/data";
 import { useDropzone } from 'react-dropzone';
-import { useFirestore, useCollection } from "@/firebase";
+import { useFirestore } from "@/firebase";
 import { useAuthContext } from '@/firebase/auth/auth-provider';
 import { writeBatch, collection, doc, increment } from 'firebase/firestore';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface OptionsPageProps {
@@ -49,7 +51,9 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewData[]>([]);
-  const [importMode, setImportMode] = useState<'add_only' | 'overwrite'>('add_only');
+  const [importMode, setImportMode] = useState<'add_only' | 'overwrite' | 'replace_all'>('add_only');
+  const [isConfirmReplaceOpen, setIsConfirmReplaceOpen] = useState(false);
+  const [replaceConfirmationText, setReplaceConfirmationText] = useState('');
 
 
   const onDrop = (acceptedFiles: File[]) => {
@@ -152,6 +156,11 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
   
   const handleConfirmImport = async () => {
     if (previewData.length === 0 || !profile) return;
+    
+    if (importMode === 'replace_all') {
+      setIsConfirmReplaceOpen(true);
+      return;
+    }
 
     setIsProcessing(true);
     toast({ title: 'Iniciando importación...', description: 'Este proceso puede tardar unos momentos.' });
@@ -159,12 +168,17 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
     try {
         const batch = writeBatch(firestore);
         const addedDate = new Date().toISOString();
+        
+        if(importMode === 'replace_all') {
+            allOnus.forEach(onu => batch.delete(doc(firestore, 'onus', onu.id)));
+            allShelves.forEach(shelf => batch.delete(doc(firestore, 'shelves', shelf.id)));
+        }
 
         for (const shelfData of previewData) {
             let shelfId: string;
             let shelfRef: any;
-
-            const existingShelf = allShelves.find(s => s.name === shelfData.shelfName);
+            
+            const existingShelf = importMode !== 'replace_all' ? allShelves.find(s => s.name === shelfData.shelfName) : undefined;
 
             if (existingShelf) {
                 shelfId = existingShelf.id;
@@ -194,7 +208,7 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                     userName: profile.name,
                 };
                 
-                if (device.status === 'new' && (importMode === 'add_only' || importMode === 'overwrite')) {
+                if (device.status === 'new' || importMode === 'replace_all') {
                     const onuRef = doc(firestore, 'onus', device.id);
                     const newOnu: Omit<OnuData, 'id'> = {
                         shelfId: shelfId,
@@ -233,7 +247,9 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
             }
 
             if (itemsAddedToShelf > 0) {
-                const finalItemCount = (existingShelf?.itemCount || 0) + itemsAddedToShelf;
+                 const finalItemCount = importMode === 'replace_all' 
+                    ? itemsAddedToShelf
+                    : (existingShelf?.itemCount || 0) + itemsAddedToShelf;
                 batch.update(shelfRef, { itemCount: finalItemCount, capacity: Math.max(existingShelf?.capacity || 0, finalItemCount) });
             }
         }
@@ -258,6 +274,8 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
     } finally {
         setIsProcessing(false);
         setIsPreviewOpen(false);
+        setReplaceConfirmationText('');
+        setIsConfirmReplaceOpen(false);
     }
   }
 
@@ -295,7 +313,7 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
   const totalShelvesToCreate = previewData.filter(s => s.isNewShelf).length;
   const totalNewDevices = previewData.reduce((sum, shelf) => sum + shelf.devices.filter(d => d.status === 'new').length, 0);
   const totalMovedDevices = previewData.reduce((sum, shelf) => sum + shelf.devices.filter(d => d.status === 'existing_moved').length, 0);
-  const totalDuplicateDevices = previewData.reduce((sum, shelf) => sum + shelf.devices.filter(d => d.status === 'existing_duplicate').length, 0);
+  const totalDuplicateDevices = previewData.reduce((sum, shelf) => sum + shelf.devices.filter(d => d.status === 'existing_duplicate' || d.status === 'file_duplicate').length, 0);
 
   return (
     <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
@@ -463,7 +481,7 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                     <AlertCircle className="h-5 w-5 text-yellow-600 mt-1"/>
                     <div>
                         <h4 className='font-semibold text-yellow-800'>Modo de Importación</h4>
-                         <RadioGroup defaultValue="add_only" value={importMode} onValueChange={(v: 'add_only' | 'overwrite') => setImportMode(v)} className="mt-2 space-y-2">
+                         <RadioGroup defaultValue="add_only" value={importMode} onValueChange={(v: 'add_only' | 'overwrite' | 'replace_all') => setImportMode(v)} className="mt-2 space-y-2">
                             <div className="flex items-start space-x-3">
                                 <RadioGroupItem value="add_only" id="mode-add" className="mt-1"/>
                                 <Label htmlFor="mode-add" className="font-normal -mt-0.5">
@@ -476,6 +494,12 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                                     <strong className='text-yellow-900'>Sobrescribir y agregar:</strong> Se crearán los dispositivos nuevos (verdes) y se moverán los existentes (amarillos) a los estantes del archivo.
                                 </Label>
                             </div>
+                             <div className="flex items-start space-x-3 p-3 bg-red-100/50 border border-red-500/30 rounded-md">
+                                <RadioGroupItem value="replace_all" id="mode-replace" className="mt-1 border-red-500 text-red-500"/>
+                                <Label htmlFor="mode-replace" className="font-normal -mt-0.5">
+                                    <strong className='text-red-700'>Reemplazo Total del Stock:</strong> <span className='text-red-600'>¡CUIDADO!</span> Se eliminarán TODOS los estantes y dispositivos actuales y se cargarán únicamente los del archivo.
+                                </Label>
+                            </div>
                         </RadioGroup>
                     </div>
                 </div>
@@ -483,13 +507,43 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setIsPreviewOpen(false)} disabled={isProcessing}>Cancelar</Button>
-            <Button onClick={handleConfirmImport} disabled={isProcessing}>
+            <Button onClick={handleConfirmImport} disabled={isProcessing} variant={importMode === 'replace_all' ? 'destructive' : 'default'}>
               {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmar e Importar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      
+      <AlertDialog open={isConfirmReplaceOpen} onOpenChange={setIsConfirmReplaceOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Esta acción es irreversible y eliminará todo el inventario actual. Para confirmar, escribe <strong className="text-red-600 font-mono">REEMPLAZAR</strong> en el campo de abajo.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="py-4">
+                <Input 
+                    id="confirm-replace-text"
+                    value={replaceConfirmationText}
+                    onChange={(e) => setReplaceConfirmationText(e.target.value)}
+                    placeholder="Escribe REEMPLAZAR aquí"
+                />
+            </div>
+            <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setReplaceConfirmationText('')}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction 
+                    onClick={handleConfirmImport} 
+                    disabled={replaceConfirmationText !== 'REEMPLAZAR'}
+                    className="bg-destructive hover:bg-destructive/90"
+                >
+                    Sí, reemplazar todo
+                </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </section>
   );
 }
