@@ -135,9 +135,9 @@ export default function AppPage() {
                 </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => setActiveView('cargar-stock')} isActive={activeView === 'cargar-stock'} tooltip='Cargar Stock'>
+                <SidebarMenuButton onClick={() => setActiveView('cargar-stock')} isActive={activeView === 'cargar-stock'} tooltip='Gestion de stock'>
                     <PackagePlus />
-                    Cargar Stock
+                    Gestion de stock
                 </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
