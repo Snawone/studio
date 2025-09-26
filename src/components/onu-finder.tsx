@@ -455,6 +455,9 @@ export function OnuFinder({
     s.itemCount < s.capacity
   );
 
+  const statusFilter = activeView === 'activas' ? 'active' : 'removed';
+  const currentViewOnusCount = onus.filter(o => o.status === statusFilter).length;
+
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
          <div className="space-y-4">
@@ -485,7 +488,7 @@ export function OnuFinder({
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${onus.filter(o => o.status === activeView.slice(0, -1)).length} dispositivos...`}
+                    placeholder={`Buscar entre ${currentViewOnusCount} dispositivos...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
