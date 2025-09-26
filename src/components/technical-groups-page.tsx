@@ -4,52 +4,18 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useToast } from '@/hooks/use-toast';
-import { useFirestore, useCollection, useMemoFirebase, useAuthContext } from '@/firebase';
-import { collection, doc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import {
-  Loader2,
-  Users,
-  PlusCircle,
-  Edit,
-  Trash2,
-  UserPlus,
-  X,
-} from 'lucide-react';
-import {
-  type TechnicalGroup,
-  type Technician,
-  type UserProfile,
-} from '@/lib/data';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import {
-  addDocumentNonBlocking,
-  updateDocumentNonBlocking,
-  deleteDocumentNonBlocking,
-} from '@/firebase/non-blocking-updates';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
+import { collection, doc, writeBatch, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { Loader2, Warehouse, PlusCircle, Edit, Trash2, Users, UserPlus } from 'lucide-react';
+import { type TechnicalGroup, type UserProfile, type Technician } from '@/lib/data';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
+import { useAuthContext } from '@/firebase/auth/auth-provider';
 import {
   Dialog,
   DialogContent,
@@ -59,7 +25,7 @@ import {
   DialogFooter,
   DialogDescription,
   DialogClose,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,431 +35,323 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 
 const groupSchema = z.object({
-  name: z.string().min(3, 'El nombre debe tener al menos 3 caracteres.'),
+  name: z.string().min(1, "El nombre del grupo es requerido."),
 });
+
 type GroupFormValues = z.infer<typeof groupSchema>;
 
 const technicianSchema = z.object({
-  userId: z.string().min(1, 'Debes seleccionar un técnico.'),
+  userId: z.string().min(1, "Debe seleccionar un técnico."),
 });
+
 type TechnicianFormValues = z.infer<typeof technicianSchema>;
+
 
 export function TechnicalGroupsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { profile } = useAuthContext();
-
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
-  const [isAddTechnicianOpen, setIsAddTechnicianOpen] = useState<string | null>(
-    null
-  );
-  const [groupToEdit, setGroupToEdit] = useState<TechnicalGroup | null>(null);
-  const [groupToDelete, setGroupToDelete] = useState<TechnicalGroup | null>(
-    null
-  );
-  const [technicianToRemove, setTechnicianToRemove] = useState<{
-    group: TechnicalGroup;
-    technician: Technician;
-  } | null>(null);
+  const [activeDialog, setActiveDialog] = useState<null | 'createGroup' | 'addTechnician' | 'editGroup' | 'deleteGroup' | 'removeTechnician'>(null);
+  const [selectedGroup, setSelectedGroup] = useState<TechnicalGroup | null>(null);
+  const [selectedTechnician, setSelectedTechnician] = useState<Technician | null>(null);
 
-  // Data Hooks
-  const groupsRef = useMemoFirebase(
-    () => collection(firestore, 'technical-groups'),
-    [firestore]
-  );
-  const { data: groups, isLoading: isLoadingGroups } =
-    useCollection<TechnicalGroup>(groupsRef);
+  const groupsCollectionRef = useMemoFirebase(() => collection(firestore, 'technical-groups'), [firestore]);
+  const { data: groups, isLoading: isLoadingGroups } = useCollection<TechnicalGroup>(groupsCollectionRef);
 
-  const usersRef = useMemoFirebase(
-    () => collection(firestore, 'users'),
-    [firestore]
-  );
-  const { data: users, isLoading: isLoadingUsers } =
-    useCollection<UserProfile>(usersRef);
+  const usersCollectionRef = useMemoFirebase(() => collection(firestore, 'users'), [firestore]);
+  const { data: users, isLoading: isLoadingUsers } = useCollection<UserProfile>(usersCollectionRef);
 
-  // Forms
   const groupForm = useForm<GroupFormValues>({
     resolver: zodResolver(groupSchema),
+    defaultValues: { name: '' },
   });
 
   const technicianForm = useForm<TechnicianFormValues>({
     resolver: zodResolver(technicianSchema),
+    defaultValues: { userId: '' },
   });
 
-  // Handlers
   const handleCreateGroup = async (values: GroupFormValues) => {
     setIsSubmitting(true);
-    addDocumentNonBlocking(collection(firestore, 'technical-groups'), {
+    const newGroupData = {
       name: values.name,
-      technicians: [],
       createdAt: new Date().toISOString(),
-    });
-    toast({
-      title: 'Grupo Creado',
-      description: `El grupo "${values.name}" ha sido creado.`,
-    });
+      technicians: [],
+    };
+    await addDocumentNonBlocking(collection(firestore, 'technical-groups'), newGroupData);
+    toast({ title: "Grupo creado", description: `El grupo "${values.name}" ha sido creado.` });
     setIsSubmitting(false);
-    setIsCreateGroupOpen(false);
-    groupForm.reset({ name: '' });
+    setActiveDialog(null);
+    groupForm.reset();
   };
-
-  const handleUpdateGroup = async (values: GroupFormValues) => {
-    if (!groupToEdit) return;
+  
+  const handleEditGroup = async (values: GroupFormValues) => {
+    if (!selectedGroup) return;
     setIsSubmitting(true);
-    const groupRef = doc(firestore, 'technical-groups', groupToEdit.id);
-    updateDocumentNonBlocking(groupRef, { name: values.name });
-    toast({
-      title: 'Grupo Actualizado',
-      description: 'El nombre del grupo ha sido actualizado.',
-    });
+    const groupRef = doc(firestore, 'technical-groups', selectedGroup.id);
+    await updateDocumentNonBlocking(groupRef, { name: values.name });
+    toast({ title: "Grupo actualizado", description: "El nombre del grupo ha sido cambiado." });
     setIsSubmitting(false);
-    setGroupToEdit(null);
-  };
-
-  const handleDeleteGroup = async () => {
-    if (!groupToDelete) return;
-    const groupRef = doc(firestore, 'technical-groups', groupToDelete.id);
-    deleteDocumentNonBlocking(groupRef);
-    toast({
-      title: 'Grupo Eliminado',
-      description: `El grupo "${groupToDelete.name}" ha sido eliminado.`,
-    });
-    setGroupToDelete(null);
-  };
+    setActiveDialog(null);
+  }
 
   const handleAddTechnician = async (values: TechnicianFormValues) => {
-    if (!isAddTechnicianOpen) return;
+    if (!selectedGroup) return;
     setIsSubmitting(true);
-    const groupRef = doc(firestore, 'technical-groups', isAddTechnicianOpen);
     const selectedUser = users?.find(u => u.id === values.userId);
-
     if (!selectedUser) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Usuario no encontrado.',
-      });
-      setIsSubmitting(false);
-      return;
+        toast({ variant: "destructive", title: "Error", description: "Usuario no encontrado." });
+        setIsSubmitting(false);
+        return;
     }
 
+    const groupRef = doc(firestore, 'technical-groups', selectedGroup.id);
     const newTechnician: Technician = {
-      userId: selectedUser.id,
-      userName: selectedUser.name,
-      addedAt: new Date().toISOString(),
+        userId: selectedUser.id,
+        userName: selectedUser.name,
+        addedAt: new Date().toISOString(),
     };
-
-    updateDocumentNonBlocking(groupRef, {
-      technicians: arrayUnion(newTechnician),
+    
+    await updateDocumentNonBlocking(groupRef, {
+        technicians: arrayUnion(newTechnician)
     });
 
-    toast({
-      title: 'Técnico Añadido',
-      description: `${selectedUser.name} ha sido añadido al grupo.`,
-    });
+    toast({ title: "Técnico añadido", description: `${selectedUser.name} fue añadido a ${selectedGroup.name}.` });
     setIsSubmitting(false);
-    setIsAddTechnicianOpen(null);
+    setActiveDialog(null);
     technicianForm.reset();
   };
 
-  const handleRemoveTechnician = () => {
-    if (!technicianToRemove) return;
-    const { group, technician } = technicianToRemove;
-    const groupRef = doc(firestore, 'technical-groups', group.id);
-    updateDocumentNonBlocking(groupRef, {
-      technicians: arrayRemove(technician),
+  const handleRemoveTechnician = async () => {
+    if (!selectedGroup || !selectedTechnician) return;
+    const groupRef = doc(firestore, 'technical-groups', selectedGroup.id);
+    await updateDocumentNonBlocking(groupRef, {
+        technicians: arrayRemove(selectedTechnician)
     });
-    toast({
-      title: 'Técnico Eliminado',
-      description: `${technician.userName} ha sido eliminado del grupo ${group.name}.`,
-    });
-    setTechnicianToRemove(null);
-  };
-
-  const availableUsersForGroup = (groupId: string) => {
-    const group = groups?.find(g => g.id === groupId);
-    if (!group || !users) return [];
-    const technicianIds = group.technicians.map(t => t.userId);
-    return users.filter(u => !technicianIds.includes(u.id));
+    toast({ title: "Técnico eliminado", description: `${selectedTechnician.userName} fue eliminado de ${selectedGroup.name}.` });
+    setActiveDialog(null);
   };
   
-
+  const handleDeleteGroup = async () => {
+    if (!selectedGroup) return;
+    const groupRef = doc(firestore, 'technical-groups', selectedGroup.id);
+    await deleteDocumentNonBlocking(groupRef);
+    toast({ title: "Grupo eliminado", description: `El grupo "${selectedGroup.name}" fue eliminado.` });
+    setActiveDialog(null);
+  };
+  
   if (isLoadingGroups || isLoadingUsers) {
     return (
-        <div className="flex h-64 w-full items-center justify-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="ml-4 text-muted-foreground">Cargando datos...</p>
-        </div>
+      <div className="flex h-screen w-full items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-4 text-muted-foreground">Cargando datos...</p>
+      </div>
     );
   }
 
   return (
-    <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
+    <section className="w-full max-w-6xl mx-auto flex flex-col gap-8">
       <div className="flex justify-between items-start">
         <div className="space-y-2">
-          <h2 className="text-2xl font-headline font-semibold flex items-center gap-2">
-            <Users className="h-6 w-6" />
-            Grupos Técnicos
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            Crea grupos y asigna técnicos para organizar tu equipo.
-          </p>
+            <h2 className="text-2xl font-headline font-semibold flex items-center gap-2">
+                <Users className="h-6 w-6" />
+                Grupos Técnicos
+            </h2>
+            <p className="text-muted-foreground text-sm">
+                Crea y administra grupos de técnicos para organizar el trabajo de campo.
+            </p>
         </div>
-        <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Crear Grupo
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Crear Nuevo Grupo</DialogTitle>
-            </DialogHeader>
-            <Form {...groupForm}>
-              <form onSubmit={groupForm.handleSubmit(handleCreateGroup)}>
+         <Button onClick={() => setActiveDialog('createGroup')}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Crear Grupo
+        </Button>
+      </div>
+      
+      <div className="space-y-6">
+        {groups && groups.length > 0 ? (
+          groups.sort((a,b) => a.name.localeCompare(b.name)).map(group => (
+            <Card key={group.id}>
+              <CardHeader className="flex flex-row justify-between items-center">
+                  <div>
+                    <CardTitle>{group.name}</CardTitle>
+                    <CardDescription>{group.technicians.length} técnico(s)</CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => { setSelectedGroup(group); setActiveDialog('addTechnician'); }}>
+                          <UserPlus className="mr-2 h-4 w-4"/>
+                          Añadir Técnico
+                      </Button>
+                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { groupForm.reset({ name: group.name }); setSelectedGroup(group); setActiveDialog('editGroup'); }}>
+                          <Edit className="h-4 w-4"/>
+                       </Button>
+                       <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/80" onClick={() => { setSelectedGroup(group); setActiveDialog('deleteGroup'); }}>
+                          <Trash2 className="h-4 w-4"/>
+                       </Button>
+                  </div>
+              </CardHeader>
+              <CardContent>
+                {group.technicians.length > 0 ? (
+                  <ul className="divide-y">
+                    {group.technicians.map(tech => (
+                      <li key={tech.userId} className="flex justify-between items-center py-2">
+                        <span className="font-medium">{tech.userName}</span>
+                        <Button variant="ghost" size="sm" className="text-destructive/80" onClick={() => { setSelectedGroup(group); setSelectedTechnician(tech); setActiveDialog('removeTechnician'); }}>
+                            Quitar
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-center text-muted-foreground py-4">No hay técnicos en este grupo.</p>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="text-center py-16 border-2 border-dashed rounded-lg">
+            <h3 className="text-lg font-medium">No hay grupos técnicos</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Crea tu primer grupo para empezar a organizar a tus técnicos.
+            </p>
+          </div>
+        )}
+      </div>
+
+       {/* Dialogs */}
+      <Dialog open={activeDialog === 'createGroup'} onOpenChange={(open) => !open && setActiveDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Crear Nuevo Grupo</DialogTitle></DialogHeader>
+          <Form {...groupForm}>
+            <form onSubmit={groupForm.handleSubmit(handleCreateGroup)}>
                 <div className="py-4">
                   <FormField
-                    control={groupForm.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nombre del Grupo</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Ej: Equipo Alpha" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                      control={groupForm.control}
+                      name="name"
+                      render={({ field }) => (
+                          <FormItem>
+                              <FormLabel>Nombre del Grupo</FormLabel>
+                              <FormControl><Input placeholder="Ej: Equipo Nocturno" {...field} autoFocus /></FormControl>
+                              <FormMessage />
+                          </FormItem>
+                      )}
                   />
                 </div>
                 <DialogFooter>
-                  <DialogClose asChild>
-                    <Button type="button" variant="ghost">
-                      Cancelar
+                    <DialogClose asChild><Button type="button" variant="ghost">Cancelar</Button></DialogClose>
+                    <Button type="submit" disabled={isSubmitting}>
+                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Crear
                     </Button>
-                  </DialogClose>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Crear
-                  </Button>
                 </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista de Grupos</CardTitle>
-          <CardDescription>
-            Administra los grupos y los técnicos asignados a cada uno.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingGroups ? (
-            <div className="flex justify-center p-8">
-              <Loader2 className="animate-spin text-muted-foreground" />
-            </div>
-          ) : groups && groups.length > 0 ? (
-            <div className="space-y-4">
-              {groups
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map(group => (
-                  <Card key={group.id} className="overflow-hidden">
-                    <CardHeader className="bg-muted/30 flex-row items-center justify-between p-4">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-5 w-5 text-primary" />
-                        <CardTitle className="text-lg">{group.name}</CardTitle>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Dialog
-                          open={isAddTechnicianOpen === group.id}
-                          onOpenChange={open =>
-                            setIsAddTechnicianOpen(open ? group.id : null)
-                          }
-                        >
-                          <DialogTrigger asChild>
-                            <Button size="sm">
-                              <UserPlus className="mr-2 h-4 w-4" />
-                              Añadir Técnico
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Añadir Técnico a {group.name}</DialogTitle>
-                            </DialogHeader>
-                            <Form {...technicianForm}>
-                              <form onSubmit={technicianForm.handleSubmit(handleAddTechnician)}>
-                                <div className="py-4">
-                                  <FormField
-                                    control={technicianForm.control}
-                                    name="userId"
-                                    render={({ field }) => (
-                                      <FormItem>
-                                        <FormLabel>Técnico</FormLabel>
-                                        <Select
-                                          onValueChange={field.onChange}
-                                          defaultValue={field.value}
-                                        >
-                                          <FormControl>
-                                            <SelectTrigger>
-                                              <SelectValue placeholder="Seleccionar un usuario..." />
-                                            </SelectTrigger>
-                                          </FormControl>
-                                          <SelectContent>
-                                            {isLoadingUsers ? (
-                                              <SelectItem value="loading" disabled>
-                                                Cargando...
-                                              </SelectItem>
-                                            ) : availableUsersForGroup(group.id).length > 0 ? (
-                                              availableUsersForGroup(group.id).map(user => (
-                                                <SelectItem key={user.id} value={user.id}>
-                                                  {user.name} ({user.email})
-                                                </SelectItem>
-                                              ))
-                                            ) : (
-                                              <SelectItem value="none" disabled>
-                                                No hay usuarios disponibles
-                                              </SelectItem>
-                                            )}
-                                          </SelectContent>
-                                        </Select>
-                                        <FormMessage />
-                                      </FormItem>
-                                    )}
-                                  />
-                                </div>
-                                <DialogFooter>
-                                  <DialogClose asChild>
-                                    <Button type="button" variant="ghost">Cancelar</Button>
-                                  </DialogClose>
-                                  <Button type="submit" disabled={isSubmitting}>
-                                      {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                                      Añadir
-                                  </Button>
-                                </DialogFooter>
-                              </form>
-                            </Form>
-                          </DialogContent>
-                        </Dialog>
-                        <Button variant="ghost" size="icon" onClick={() => setGroupToEdit(group)}>
-                            <Edit className="h-4 w-4" />
-                        </Button>
-                         <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-destructive/80" onClick={() => setGroupToDelete(group)}>
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader>
-                                    <AlertDialogTitle>¿Eliminar grupo "{groupToDelete?.name}"?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                        Esta acción es permanente. Se eliminará el grupo pero los usuarios permanecerán en el sistema.
-                                    </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteGroup()} className="bg-destructive hover:bg-destructive/90">Eliminar</AlertDialogAction>
-                                </AlertDialogFooter>
-                            </AlertDialogContent>
-                         </AlertDialog>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-4">
-                      {group.technicians && group.technicians.length > 0 ? (
-                        <ul className="space-y-2">
-                          {group.technicians.map(technician => (
-                            <li
-                              key={technician.userId}
-                              className="flex items-center justify-between rounded-md border p-2"
-                            >
-                              <span className="text-sm font-medium">
-                                {technician.userName}
-                              </span>
-                               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setTechnicianToRemove({group, technician})}>
-                                    <X className="h-4 w-4 text-muted-foreground"/>
-                               </Button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-center text-muted-foreground py-4">
-                          No hay técnicos en este grupo.
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-            </div>
-          ) : (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-              <p className="text-muted-foreground">
-                No hay grupos creados. ¡Empieza creando uno!
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      
-      {/* Edit Group Dialog */}
-      <Dialog open={!!groupToEdit} onOpenChange={(open) => !open && setGroupToEdit(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Grupo</DialogTitle>
-          </DialogHeader>
-          <Form {...groupForm}>
-            <form onSubmit={groupForm.handleSubmit(handleUpdateGroup)}>
-              <div className="py-4">
-                <FormField
-                  control={groupForm.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nuevo Nombre del Grupo</FormLabel>
-                      <FormControl>
-                        <Input {...field} defaultValue={groupToEdit?.name} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <DialogFooter>
-                <DialogClose asChild><Button type="button" variant="ghost">Cancelar</Button></DialogClose>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Guardar Cambios
-                </Button>
-              </DialogFooter>
             </form>
           </Form>
         </DialogContent>
       </Dialog>
       
-      {/* Confirm Remove Technician Dialog */}
-      <AlertDialog open={!!technicianToRemove} onOpenChange={(open) => !open && setTechnicianToRemove(null)}>
-          <AlertDialogContent>
-              <AlertDialogHeader>
-                  <AlertDialogTitle>¿Quitar a {technicianToRemove?.technician.userName}?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                      Se quitará a este técnico del grupo "{technicianToRemove?.group.name}". El usuario no será eliminado del sistema.
-                  </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleRemoveTechnician}>Sí, quitar</AlertDialogAction>
-              </AlertDialogFooter>
-          </AlertDialogContent>
+      <Dialog open={activeDialog === 'editGroup'} onOpenChange={(open) => !open && setActiveDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar Grupo</DialogTitle></DialogHeader>
+          <Form {...groupForm}>
+            <form onSubmit={groupForm.handleSubmit(handleEditGroup)}>
+                <div className="py-4">
+                  <FormField
+                      control={groupForm.control}
+                      name="name"
+                      render={({ field }) => (
+                          <FormItem>
+                              <FormLabel>Nuevo Nombre del Grupo</FormLabel>
+                              <FormControl><Input {...field} autoFocus /></FormControl>
+                              <FormMessage />
+                          </FormItem>
+                      )}
+                  />
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild><Button type="button" variant="ghost">Cancelar</Button></DialogClose>
+                    <Button type="submit" disabled={isSubmitting}>
+                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Guardar
+                    </Button>
+                </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={activeDialog === 'addTechnician'} onOpenChange={(open) => !open && setActiveDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Añadir Técnico a {selectedGroup?.name}</DialogTitle></DialogHeader>
+          <Form {...technicianForm}>
+            <form onSubmit={technicianForm.handleSubmit(handleAddTechnician)}>
+                <div className="py-4">
+                  <FormField
+                      control={technicianForm.control}
+                      name="userId"
+                      render={({ field }) => (
+                          <FormItem>
+                              <FormLabel>Seleccionar Usuario</FormLabel>
+                               <Select onValueChange={field.onChange} value={field.value} defaultValue="">
+                                <FormControl>
+                                  <SelectTrigger><SelectValue placeholder={"Seleccionar un usuario..."} /></SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {users?.filter(
+                                      user => !selectedGroup?.technicians.some(tech => tech.userId === user.id)
+                                  ).map((user) => (
+                                      <SelectItem key={user.id} value={user.id}>
+                                        {user.name} ({user.email})
+                                      </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                          </FormItem>
+                      )}
+                  />
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild><Button type="button" variant="ghost">Cancelar</Button></DialogClose>
+                    <Button type="submit" disabled={isSubmitting}>
+                        {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : null} Añadir
+                    </Button>
+                </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+      
+      <AlertDialog open={activeDialog === 'removeTechnician'} onOpenChange={(open) => !open && setActiveDialog(null)}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>¿Seguro que quieres quitar a {selectedTechnician?.userName}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Esta acción lo eliminará del grupo "{selectedGroup?.name}". No se puede deshacer.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRemoveTechnician}>Sí, quitar</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={activeDialog === 'deleteGroup'} onOpenChange={(open) => !open && setActiveDialog(null)}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>¿Seguro que quieres eliminar el grupo "{selectedGroup?.name}"?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Esta acción eliminará el grupo permanentemente. Los técnicos asignados no serán eliminados.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteGroup} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sí, eliminar</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </section>
   );
 }
