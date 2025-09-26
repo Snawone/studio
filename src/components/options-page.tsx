@@ -396,7 +396,7 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                                 value={shelf.type}
                                 onValueChange={(value: 'onu' | 'stb') => handleDeviceTypeChange(shelf.shelfName, value)} 
                                 className="flex items-center gap-4"
-                                disabled={!shelf.isNewShelf}
+                                disabled={!shelf.isNewShelf && shelf.devices.some(d => d.status !== 'new')}
                               >
                                 <div className="flex items-center space-x-2">
                                     <RadioGroupItem value="onu" id={`r-onu-${shelf.shelfName}`} />
@@ -436,16 +436,16 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                     <AlertCircle className="h-5 w-5 text-yellow-600 mt-1"/>
                     <div>
                         <h4 className='font-semibold text-yellow-800'>Modo de Importación</h4>
-                         <RadioGroup defaultValue="add_only" value={importMode} onValueChange={(v: 'add_only' | 'overwrite') => setImportMode(v)} className="mt-2 space-y-1">
-                            <div className="flex items-center space-x-2">
+                         <RadioGroup defaultValue="add_only" value={importMode} onValueChange={(v: 'add_only' | 'overwrite') => setImportMode(v)} className="mt-2 space-y-2">
+                            <div className="flex items-start space-x-2">
                                 <RadioGroupItem value="add_only" id="mode-add"/>
-                                <Label htmlFor="mode-add" className="font-normal">
+                                <Label htmlFor="mode-add" className="font-normal -mt-0.5">
                                     <strong className='text-yellow-900'>Agregar solo nuevos:</strong> Solo se crearán los dispositivos en verde. Los existentes no se modificarán.
                                 </Label>
                             </div>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-start space-x-2">
                                 <RadioGroupItem value="overwrite" id="mode-overwrite"/>
-                                <Label htmlFor="mode-overwrite" className="font-normal">
+                                <Label htmlFor="mode-overwrite" className="font-normal -mt-0.5">
                                     <strong className='text-yellow-900'>Sobrescribir y agregar:</strong> Se crearán los dispositivos nuevos (verdes) y se moverán los existentes (amarillos) a los estantes del archivo.
                                 </Label>
                             </div>
