@@ -342,22 +342,30 @@ export function OnuFinder({
         <div className="space-y-4">
             {sortedShelfNames.length > 0 ? (
                 <Accordion type="single" collapsible className="w-full" defaultValue={sortedShelfNames.length > 0 ? sortedShelfNames[0] : undefined}>
-                    {sortedShelfNames.map(shelfName => (
+                    {sortedShelfNames.map(shelfName => {
+                      const shelfOnus = groupedOnus[shelfName];
+                      const onuCount = shelfOnus.filter(d => d.type === 'onu').length;
+                      const stbCount = shelfOnus.filter(d => d.type === 'stb').length;
+                      
+                      return (
                         <AccordionItem value={shelfName} key={shelfName}>
                             <AccordionTrigger>
                                 <div className="flex items-center gap-2">
                                     <Server className="h-5 w-5 text-muted-foreground" />
                                     <span>{shelfName}</span>
-                                    <span className="text-xs text-muted-foreground">({groupedOnus[shelfName].length} items)</span>
+                                    <div className="text-xs text-muted-foreground flex gap-2">
+                                      {onuCount > 0 && <span>ONUs: {onuCount}</span>}
+                                      {stbCount > 0 && <span>STBs: {stbCount}</span>}
+                                    </div>
                                 </div>
                             </AccordionTrigger>
                             <AccordionContent>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-2">
-                                    {groupedOnus[shelfName].map((onu, index) => renderOnuCard(onu, index))}
+                                    {shelfOnus.map((onu, index) => renderOnuCard(onu, index))}
                                 </div>
                             </AccordionContent>
                         </AccordionItem>
-                    ))}
+                    )})}
                 </Accordion>
             ) : (
                 <div className="text-center py-16 border-2 border-dashed rounded-lg">
@@ -493,3 +501,5 @@ export function OnuFinder({
     </section>
   );
 }
+
+    
