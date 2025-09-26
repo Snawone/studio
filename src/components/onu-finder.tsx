@@ -256,7 +256,7 @@ export function OnuFinder({
              <div className="flex justify-between items-start">
                 <div className="flex items-center gap-2">
                     <Tag className="mr-1 h-4 w-4 flex-shrink-0 mt-1 text-primary"/>
-                    <CardTitle className="flex items-baseline text-base text-primary break-all font-mono">
+                    <CardTitle className="flex items-center text-base text-primary break-all font-mono">
                         <div>
                             {isExactMatch ? (
                             <>
@@ -267,7 +267,7 @@ export function OnuFinder({
                             onuId
                             )}
                         </div>
-                        <Badge variant={row.type === 'onu' ? 'outline' : 'secondary'} className="text-xs ml-2">{row.type.toUpperCase()}</Badge>
+                        <Badge variant={row.type === 'onu' ? 'outline' : 'secondary'} className="text-xs ml-2 shrink-0">{row.type.toUpperCase()}</Badge>
                     </CardTitle>
                 </div>
                 <Dialog>
