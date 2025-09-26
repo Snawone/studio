@@ -148,6 +148,59 @@
         "name",
         "email"
       ]
+    },
+    "Technician": {
+      "title": "Technician",
+      "description": "Represents a technician assigned to a group.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user profile."
+        },
+        "userName": {
+          "type": "string",
+          "description": "Denormalized name of the user for display purposes."
+        },
+        "addedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the technician was added to the group."
+        }
+      },
+      "required": [
+        "userId",
+        "userName",
+        "addedAt"
+      ]
+    },
+    "TechnicalGroup": {
+      "title": "Technical Group",
+      "description": "Represents a group of technicians.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the technical group."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The date the group was created."
+        },
+        "technicians": {
+          "type": "array",
+          "description": "A list of technicians in this group.",
+          "items": {
+            "$ref": "#/entities/Technician"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "createdAt",
+        "technicians"
+      ]
     }
   },
   "auth": {
@@ -206,6 +259,22 @@
             {
               "name": "userId",
               "description": "The unique identifier of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "technical-groups/{groupId}",
+        "definition": {
+          "entityName": "TechnicalGroup",
+          "schema": {
+            "$ref": "#/entities/TechnicalGroup"
+          },
+          "description": "Collection of all technical groups.",
+          "params": [
+            {
+              "name": "groupId",
+              "description": "The unique identifier of the group."
             }
           ]
         }

@@ -43,3 +43,16 @@ export type FileInfo = {
   sheetName: string;
   lastUpdated: string;
 }
+
+export type Technician = {
+  userId: string;
+  userName: string;
+  addedAt: string;
+};
+
+export type TechnicalGroup = {
+  id: string;
+  name: string;
+  createdAt: string;
+  technicians: Technician[];
+};
