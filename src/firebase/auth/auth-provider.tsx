@@ -1,5 +1,5 @@
 'use client';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   createContext,
   useContext,
@@ -27,6 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -34,52 +35,60 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setAuthLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
+        // Profile fetching will be handled by the next useEffect
       } else {
         setUser(null);
         setProfile(null);
         setAuthLoading(false);
-        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/app')) {
+        // If on an app page, redirect to home
+        if (pathname.startsWith('/app')) {
             router.push('/');
         }
       }
     });
     return () => unsubscribe();
-  }, [auth, router]);
+  }, [auth, router, pathname]);
 
   useEffect(() => {
     if (user) {
-      setAuthLoading(true);
       const userDocRef = doc(firestore, 'users', user.uid);
       const unsubscribe = onSnapshot(userDocRef, (doc) => {
         if (doc.exists()) {
           const userProfileData = { id: doc.id, ...doc.data() } as UserProfile;
+          
+          // Hardcoded admin check
           if (user.email === 'santiagowyka@gmail.com') {
             userProfileData.isAdmin = true;
           }
+
           setProfile(userProfileData);
-          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/app')) {
+
+          // If not on an app page, redirect to app
+          if (!pathname.startsWith('/app')) {
             router.push('/app');
           }
-           setAuthLoading(false); // Fix: Set loading to false when profile is found
         } else {
-            // If the user exists in Auth but not in Firestore, wait a bit, it might be creating.
-            // But if it's been a while, something is wrong.
-            // For now, we just keep loading. The main page should handle prolonged loading.
-            // A more robust solution might involve a timeout.
+            // This can happen briefly on signup. If it persists, there's an issue.
+            // For now, we clear the profile and let the UI decide what to do.
+            setProfile(null);
         }
+        setAuthLoading(false);
       }, (error) => {
           console.error("Error fetching user profile:", error);
           setAuthLoading(false);
           setProfile(null);
-          signOut(auth);
+          // Optional: Force logout if profile can't be fetched
+          // signOut(auth);
       });
       return () => unsubscribe();
     } else {
+        // No user, no profile fetching needed.
         setAuthLoading(false);
     }
-  }, [user, firestore, router, auth]);
+  }, [user, firestore, router, pathname, auth]);
 
   const logout = async () => {
     await signOut(auth);

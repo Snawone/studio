@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useAuthContext } from '@/firebase';
 import { collection, doc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import {
   Loader2,
@@ -84,6 +84,7 @@ type TechnicianFormValues = z.infer<typeof technicianSchema>;
 export function TechnicalGroupsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
+  const { profile } = useAuthContext();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
@@ -195,7 +196,7 @@ export function TechnicalGroupsPage() {
       description: `${selectedUser.name} ha sido añadido al grupo.`,
     });
     setIsSubmitting(false);
-    setIsAddTechnicianOpen(null);
+setIsAddTechnicianOpen(null);
     technicianForm.reset();
   };
 
@@ -217,8 +218,17 @@ export function TechnicalGroupsPage() {
     const group = groups?.find(g => g.id === groupId);
     if (!group || !users) return [];
     const technicianIds = group.technicians.map(t => t.userId);
-    return users.filter(u => !technicianIds.includes(u.id));
+    return users.filter(u => !technicianIds.includes(u.id) && u.id !== profile?.id);
   };
+  
+    if (isLoadingGroups || isLoadingUsers || !profile) {
+    return (
+        <div className="flex h-64 w-full items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="ml-4 text-muted-foreground">Cargando datos del grupo...</p>
+        </div>
+    );
+  }
 
   return (
     <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
@@ -378,13 +388,13 @@ export function TechnicalGroupsPage() {
                         </Button>
                          <AlertDialog>
                             <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-destructive/80">
+                                <Button variant="ghost" size="icon" className="text-destructive/80" onClick={() => setGroupToDelete(group)}>
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                                 <AlertDialogHeader>
-                                    <AlertDialogTitle>¿Eliminar grupo "{group.name}"?</AlertDialogTitle>
+                                    <AlertDialogTitle>¿Eliminar grupo "{groupToDelete?.name}"?</AlertDialogTitle>
                                     <AlertDialogDescription>
                                         Esta acción es permanente. Se eliminará el grupo pero los usuarios permanecerán en el sistema.
                                     </AlertDialogDescription>
