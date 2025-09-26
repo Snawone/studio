@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Settings, FileDown, UploadCloud, File, X, Loader2 } from "lucide-react";
+import { Settings, FileDown, UploadCloud, File, X, Loader2, Warehouse, Box } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from 'xlsx';
@@ -15,9 +15,15 @@ import { writeBatch, collection, doc } from 'firebase/firestore';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface OptionsPageProps {
   allOnus: OnuData[];
+}
+
+type PreviewData = {
+  shelfName: string;
+  deviceIds: string[];
 }
 
 export function OptionsPage({ allOnus }: OptionsPageProps) {
@@ -25,10 +31,10 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
   const firestore = useFirestore();
   const { profile } = useAuthContext();
   const [file, setFile] = useState<File | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [deviceType, setDeviceType] = useState<'onu' | 'stb'>('onu');
-
+  const [previewData, setPreviewData] = useState<PreviewData[]>([]);
 
   const onDrop = (acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -45,11 +51,11 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
     maxFiles: 1,
   });
 
-  const handleImport = async () => {
-    if (!file || !profile) return;
+  const handlePreview = async () => {
+    if (!file) return;
 
-    setIsImporting(true);
-    toast({ title: 'Iniciando importación...', description: 'Leyendo el archivo Excel.' });
+    setIsProcessing(true);
+    toast({ title: 'Procesando archivo...', description: 'Leyendo el archivo Excel para la vista previa.' });
 
     const reader = new FileReader();
     reader.onload = async (event) => {
@@ -67,71 +73,105 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
         const headers = data[0] as string[];
         const deviceRows = data.slice(1);
         
-        const batch = writeBatch(firestore);
-        const addedDate = new Date().toISOString();
+        const parsedData: PreviewData[] = [];
 
         headers.forEach((shelfName, colIndex) => {
           if (!shelfName || typeof shelfName !== 'string' || shelfName.trim() === '') return;
-
-          const devicesInShelf = deviceRows.map(row => row[colIndex]).filter(id => id);
-          if (devicesInShelf.length === 0) return;
-
-          const shelfRef = doc(collection(firestore, 'shelves'));
-          const newShelf: Omit<Shelf, 'id'> = {
-            name: shelfName.trim(),
-            capacity: devicesInShelf.length,
-            type: deviceType,
-            createdAt: addedDate,
-            itemCount: devicesInShelf.length
-          };
-          batch.set(shelfRef, newShelf);
-
-          devicesInShelf.forEach(deviceId => {
-            const onuId = String(deviceId).trim();
-            if (onuId) {
-              const onuRef = doc(firestore, 'onus', onuId);
-              const newOnu: Omit<OnuData, 'id'> = {
-                shelfId: shelfRef.id,
-                shelfName: shelfName.trim(),
-                type: deviceType,
-                addedDate: addedDate,
-                status: 'active',
-                history: [{
-                  action: 'created',
-                  date: addedDate,
-                  source: 'file',
-                  userId: profile.id,
-                  userName: profile.name,
-                }]
-              };
-              batch.set(onuRef, { id: onuId, ...newOnu });
-            }
-          });
+          
+          const devicesInShelf = deviceRows.map(row => row[colIndex]).filter(id => id).map(id => String(id).trim());
+          if (devicesInShelf.length > 0) {
+            parsedData.push({
+              shelfName: shelfName.trim(),
+              deviceIds: devicesInShelf,
+            });
+          }
         });
 
-        await batch.commit();
+        if (parsedData.length === 0) {
+            throw new Error("No se encontraron datos válidos para importar en el archivo.");
+        }
 
-        toast({
-          title: '¡Importación completada!',
-          description: 'Los estantes y dispositivos han sido cargados exitosamente.',
-        });
+        setPreviewData(parsedData);
+        setIsPreviewOpen(true);
 
-        setFile(null);
       } catch (error: any) {
-        console.error("Error al importar:", error);
+        console.error("Error al previsualizar:", error);
         toast({
           variant: 'destructive',
-          title: 'Error durante la importación',
+          title: 'Error al leer el archivo',
           description: error.message || 'No se pudo procesar el archivo Excel.',
         });
       } finally {
-        setIsImporting(false);
-        setIsConfirmModalOpen(false);
+        setIsProcessing(false);
       }
     };
-
     reader.readAsArrayBuffer(file);
   };
+  
+  const handleConfirmImport = async () => {
+    if (previewData.length === 0 || !profile) return;
+
+    setIsProcessing(true);
+    toast({ title: 'Iniciando importación...', description: 'Cargando estantes y dispositivos a la base de datos.' });
+
+    try {
+      const batch = writeBatch(firestore);
+      const addedDate = new Date().toISOString();
+
+      previewData.forEach(({ shelfName, deviceIds }) => {
+        const shelfRef = doc(collection(firestore, 'shelves'));
+        const newShelf: Omit<Shelf, 'id'> = {
+          name: shelfName,
+          capacity: deviceIds.length,
+          type: deviceType,
+          createdAt: addedDate,
+          itemCount: deviceIds.length
+        };
+        batch.set(shelfRef, newShelf);
+
+        deviceIds.forEach(deviceId => {
+          const onuRef = doc(firestore, 'onus', deviceId);
+          const newOnu: Omit<OnuData, 'id'> = {
+            shelfId: shelfRef.id,
+            shelfName: shelfName,
+            type: deviceType,
+            addedDate: addedDate,
+            status: 'active',
+            history: [{
+              action: 'created',
+              date: addedDate,
+              source: 'file',
+              userId: profile.id,
+              userName: profile.name,
+            }]
+          };
+          batch.set(onuRef, { id: deviceId, ...newOnu });
+        });
+      });
+
+      await batch.commit();
+
+      toast({
+        title: '¡Importación completada!',
+        description: `${previewData.length} estantes y ${previewData.reduce((acc, s) => acc + s.deviceIds.length, 0)} dispositivos han sido cargados.`,
+      });
+
+      setFile(null);
+      setPreviewData([]);
+
+    } catch (error: any) {
+       console.error("Error al importar:", error);
+        toast({
+          variant: 'destructive',
+          title: 'Error durante la importación',
+          description: error.message || 'No se pudo guardar en la base de datos.',
+        });
+    } finally {
+        setIsProcessing(false);
+        setIsPreviewOpen(false);
+    }
+  }
+
 
   const handleExportByShelf = () => {
     const activeOnus = allOnus.filter(onu => onu.status === 'active');
@@ -162,6 +202,9 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
     XLSX.utils.book_append_sheet(wb, ws, 'Inventario por Estante');
     XLSX.writeFile(wb, 'inventario_por_estante.xlsx');
   };
+  
+  const totalShelvesToCreate = previewData.length;
+  const totalDevicesToCreate = previewData.reduce((sum, shelf) => sum + shelf.deviceIds.length, 0);
 
   return (
     <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
@@ -208,9 +251,9 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
           )}
         </CardContent>
         <CardFooter>
-          <Button onClick={() => setIsConfirmModalOpen(true)} disabled={!file || isImporting}>
-            {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-            {isImporting ? 'Importando...' : 'Importar Archivo'}
+          <Button onClick={handlePreview} disabled={!file || isProcessing}>
+            {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+            {isProcessing ? 'Procesando...' : 'Previsualizar Carga'}
           </Button>
         </CardFooter>
       </Card>
@@ -233,30 +276,55 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
         </CardContent>
       </Card>
 
-      <Dialog open={isConfirmModalOpen} onOpenChange={setIsConfirmModalOpen}>
-        <DialogContent>
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Confirmar Tipo de Dispositivo</DialogTitle>
+            <DialogTitle>Vista Previa de la Importación</DialogTitle>
             <DialogDescription>
-              Selecciona el tipo de dispositivo que se aplicará a TODOS los estantes y dispositivos en el archivo de importación. Esta acción no se puede deshacer.
+              Revisa los datos a continuación. Si todo es correcto, confirma para importar a la base de datos.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <RadioGroup defaultValue="onu" onValueChange={(value: 'onu' | 'stb') => setDeviceType(value)}>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="onu" id="r-onu" />
-                <Label htmlFor="r-onu">ONU (Optical Network Unit)</Label>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4 text-center">
+              <div className='p-4 bg-muted/50 rounded-lg'>
+                  <p className="text-sm text-muted-foreground">Estantes a crear</p>
+                  <p className="text-2xl font-bold">{totalShelvesToCreate}</p>
               </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="stb" id="r-stb" />
-                <Label htmlFor="r-stb">STB (Set-Top Box)</Label>
+              <div className='p-4 bg-muted/50 rounded-lg'>
+                  <p className="text-sm text-muted-foreground">Dispositivos a cargar</p>
+                  <p className="text-2xl font-bold">{totalDevicesToCreate}</p>
               </div>
-            </RadioGroup>
+            </div>
+             <div>
+                <Label>Tipo de dispositivo para esta carga:</Label>
+                <RadioGroup defaultValue="onu" value={deviceType} onValueChange={(value: 'onu' | 'stb') => setDeviceType(value)} className="flex items-center gap-4 mt-2">
+                <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="onu" id="r-onu-preview" />
+                    <Label htmlFor="r-onu-preview">ONU</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="stb" id="r-stb-preview" />
+                    <Label htmlFor="r-stb-preview">STB</Label>
+                </div>
+                </RadioGroup>
+            </div>
+            <ScrollArea className="h-64 border rounded-md p-4">
+                <div className="space-y-4">
+                    {previewData.map(shelf => (
+                        <div key={shelf.shelfName}>
+                            <h4 className="font-semibold flex items-center gap-2"><Warehouse className="h-4 w-4"/>{shelf.shelfName} <span className="text-sm font-normal text-muted-foreground">({shelf.deviceIds.length} dispositivos)</span></h4>
+                            <div className="mt-2 text-xs font-mono text-muted-foreground pl-6 space-y-1">
+                                {shelf.deviceIds.map(id => <p key={id}>{id}</p>)}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </ScrollArea>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setIsConfirmModalOpen(false)}>Cancelar</Button>
-            <Button onClick={handleImport} disabled={isImporting}>
-              {isImporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button variant="ghost" onClick={() => setIsPreviewOpen(false)} disabled={isProcessing}>Cancelar</Button>
+            <Button onClick={handleConfirmImport} disabled={isProcessing}>
+              {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmar e Importar
             </Button>
           </DialogFooter>
