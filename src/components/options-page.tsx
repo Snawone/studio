@@ -2,8 +2,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Settings, FileDown, UploadCloud, File, X, Loader2, Warehouse, AlertCircle, Info } from "lucide-react";
+import { Settings, FileDown, UploadCloud, File, X, Loader2, Warehouse, AlertCircle, Info, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import * as XLSX from 'xlsx';
@@ -22,7 +25,7 @@ interface OptionsPageProps {
   allShelves: Shelf[];
 }
 
-type DeviceStatus = 'new' | 'existing_moved' | 'existing_duplicate';
+type DeviceStatus = 'new' | 'existing_moved' | 'existing_duplicate' | 'file_duplicate';
 
 type PreviewDevice = {
   id: string;
@@ -94,14 +97,23 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
           const devicesInSheet = deviceRows.map(row => row[colIndex]).filter(id => id).map(id => String(id).trim());
 
           if (devicesInSheet.length > 0) {
+            const seenIdsInColumn = new Set<string>();
             const processedDevices: PreviewDevice[] = devicesInSheet.map(deviceId => {
+              if (seenIdsInColumn.has(deviceId)) {
+                  return { id: deviceId, status: 'file_duplicate' };
+              }
+              seenIdsInColumn.add(deviceId);
+
               const existingDevice = allOnus.find(onu => onu.id === deviceId);
+              
               if (!existingDevice) {
                 return { id: deviceId, status: 'new' };
               }
+              
               if (existingDevice.shelfName === trimmedShelfName) {
-                return { id: deviceId, status: 'existing_duplicate' };
+                return { id: deviceId, status: 'existing_duplicate', currentShelfName: existingDevice.shelfName };
               }
+              
               return { id: deviceId, status: 'existing_moved', currentShelfName: existingDevice.shelfName };
             });
 
@@ -172,6 +184,8 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
             
             let itemsAddedToShelf = 0;
             for (const device of shelfData.devices) {
+                if (device.status === 'file_duplicate') continue; // Skip duplicates within the file
+
                 const historyEntry: OnuHistoryEntry = {
                     action: 'created',
                     date: addedDate,
@@ -409,9 +423,10 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                               </RadioGroup>
                            </div>
                             <div className="text-xs font-mono pl-6 space-y-1 max-h-48 overflow-y-auto">
-                                {shelf.devices.map(device => {
+                                {shelf.devices.map((device, index) => {
                                     let colorClass = '';
                                     let extraInfo = '';
+                                    let icon = null;
                                     switch (device.status) {
                                         case 'new':
                                             colorClass = 'text-green-600';
@@ -422,9 +437,21 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                                             break;
                                         case 'existing_duplicate':
                                             colorClass = 'text-red-600';
+                                            extraInfo = `(duplicado)`;
+                                            break;
+                                        case 'file_duplicate':
+                                            colorClass = 'text-orange-500';
+                                            extraInfo = `(duplicado en archivo)`;
+                                            icon = <AlertTriangle className="inline-block mr-2 h-3 w-3" />;
                                             break;
                                     }
-                                    return <p key={device.id} className={colorClass}>{device.id} <span className="text-gray-500 font-sans italic">{extraInfo}</span></p>
+                                    return (
+                                      <p key={`${device.id}-${index}`} className={colorClass}>
+                                        {icon}
+                                        {device.id}{' '}
+                                        <span className="text-gray-500 font-sans italic">{extraInfo}</span>
+                                      </p>
+                                    );
                                 })}
                             </div>
                         </div>
@@ -437,14 +464,14 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
                     <div>
                         <h4 className='font-semibold text-yellow-800'>Modo de Importación</h4>
                          <RadioGroup defaultValue="add_only" value={importMode} onValueChange={(v: 'add_only' | 'overwrite') => setImportMode(v)} className="mt-2 space-y-2">
-                            <div className="flex items-start space-x-2">
-                                <RadioGroupItem value="add_only" id="mode-add"/>
+                            <div className="flex items-start space-x-3">
+                                <RadioGroupItem value="add_only" id="mode-add" className="mt-1"/>
                                 <Label htmlFor="mode-add" className="font-normal -mt-0.5">
                                     <strong className='text-yellow-900'>Agregar solo nuevos:</strong> Solo se crearán los dispositivos en verde. Los existentes no se modificarán.
                                 </Label>
                             </div>
-                            <div className="flex items-start space-x-2">
-                                <RadioGroupItem value="overwrite" id="mode-overwrite"/>
+                            <div className="flex items-start space-x-3">
+                                <RadioGroupItem value="overwrite" id="mode-overwrite" className="mt-1"/>
                                 <Label htmlFor="mode-overwrite" className="font-normal -mt-0.5">
                                     <strong className='text-yellow-900'>Sobrescribir y agregar:</strong> Se crearán los dispositivos nuevos (verdes) y se moverán los existentes (amarillos) a los estantes del archivo.
                                 </Label>
@@ -466,3 +493,5 @@ export function OptionsPage({ allOnus, allShelves }: OptionsPageProps) {
     </section>
   );
 }
+
+    
