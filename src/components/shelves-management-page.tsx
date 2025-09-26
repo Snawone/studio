@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { collection, doc } from 'firebase/firestore';
+import { collection, doc, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { Loader2, Warehouse, PlusCircle, Edit, Trash2 } from 'lucide-react';
 import { type Shelf } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
@@ -23,7 +23,6 @@ import {
   DialogTitle,
   DialogTrigger,
   DialogFooter,
-  DialogClose,
   DialogDescription,
 } from "@/components/ui/dialog";
 import {
@@ -154,7 +153,6 @@ export function ShelvesManagementPage() {
   const [editingShelf, setEditingShelf] = useState<Shelf | null>(null);
   const [shelfToDelete, setShelfToDelete] = useState<Shelf | null>(null);
 
-
   const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
   const { data: shelves, isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
 
@@ -189,26 +187,41 @@ export function ShelvesManagementPage() {
     setEditingShelf(null);
   };
 
-  const handleDeleteShelf = () => {
+  const handleDeleteShelf = async () => {
     if (!shelfToDelete) return;
-    
-    if (shelfToDelete.itemCount > 0) {
-      toast({
-        variant: "destructive",
-        title: "Acción no permitida",
-        description: "No se puede eliminar un estante que contiene dispositivos.",
-      });
-      setShelfToDelete(null);
-      return;
+
+    const onusCollectionRef = collection(firestore, 'onus');
+    const q = query(onusCollectionRef, where("shelfId", "==", shelfToDelete.id));
+
+    try {
+        const batch = writeBatch(firestore);
+        const querySnapshot = await getDocs(q);
+        
+        // Delete all ONUs in the shelf
+        querySnapshot.forEach((document) => {
+            batch.delete(document.ref);
+        });
+
+        // Delete the shelf itself
+        const shelfRef = doc(firestore, 'shelves', shelfToDelete.id);
+        batch.delete(shelfRef);
+
+        await batch.commit();
+
+        toast({
+            title: "Estante y contenido eliminados",
+            description: `El estante "${shelfToDelete.name}" y sus ${querySnapshot.size} dispositivos han sido eliminados.`,
+        });
+    } catch (error) {
+        console.error("Error eliminando el estante y su contenido:", error);
+        toast({
+            variant: "destructive",
+            title: "Error",
+            description: "No se pudo completar la eliminación del estante y su contenido.",
+        });
+    } finally {
+        setShelfToDelete(null);
     }
-    
-    const shelfRef = doc(firestore, 'shelves', shelfToDelete.id);
-    deleteDocumentNonBlocking(shelfRef);
-    toast({
-      title: "Estante eliminado",
-      description: `El estante "${shelfToDelete.name}" ha sido eliminado.`,
-    });
-    setShelfToDelete(null);
   };
   
   return (
@@ -270,37 +283,26 @@ export function ShelvesManagementPage() {
                                         <Edit className="h-4 w-4"/>
                                         <span className="sr-only">Editar estante {shelf.name}</span>
                                     </Button>
-                                    <AlertDialog>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <div className={shelf.itemCount > 0 ? 'cursor-not-allowed' : ''}>
-                                            <AlertDialogTrigger asChild>
-                                                <Button variant="ghost" size="icon" disabled={shelf.itemCount > 0} onClick={() => setShelfToDelete(shelf)}>
-                                                    <Trash2 className="h-4 w-4 text-destructive/80"/>
-                                                    <span className="sr-only">Eliminar estante {shelf.name}</span>
-                                                </Button>
-                                            </AlertDialogTrigger>
-                                          </div>
-                                        </TooltipTrigger>
-                                        {shelf.itemCount > 0 && (
-                                            <TooltipContent>
-                                                <p>No se puede eliminar un estante con items.</p>
-                                            </TooltipContent>
-                                        )}
-                                      </Tooltip>
+                                    <AlertDialog onOpenChange={(open) => !open && setShelfToDelete(null)}>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" onClick={() => setShelfToDelete(shelf)}>
+                                                <Trash2 className="h-4 w-4 text-destructive/80"/>
+                                                <span className="sr-only">Eliminar estante {shelf.name}</span>
+                                            </Button>
+                                        </AlertDialogTrigger>
                                       <AlertDialogContent>
                                           <AlertDialogHeader>
-                                              <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                                              <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
                                               <AlertDialogDescription>
-                                                  Esta acción es permanente y no se puede deshacer. Se eliminará el estante <strong>{shelfToDelete?.name}</strong>.
+                                                  Esta acción es permanente y no se puede deshacer. Se eliminará el estante <strong>{shelfToDelete?.name}</strong> y los <strong>{shelfToDelete?.itemCount} dispositivos</strong> que contiene.
                                               </AlertDialogDescription>
                                           </AlertDialogHeader>
                                           <AlertDialogFooter>
-                                              <AlertDialogCancel onClick={() => setShelfToDelete(null)}>Cancelar</AlertDialogCancel>
+                                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
                                               <AlertDialogAction 
                                                 className="bg-destructive hover:bg-destructive/90"
                                                 onClick={handleDeleteShelf}>
-                                                  Sí, eliminar
+                                                  Sí, eliminar todo
                                               </AlertDialogAction>
                                           </AlertDialogFooter>
                                       </AlertDialogContent>
@@ -341,5 +343,3 @@ export function ShelvesManagementPage() {
     </section>
   );
 }
-
-    
