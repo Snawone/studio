@@ -44,7 +44,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, Server, Tag, Loader2, Calendar as CalendarIcon, Trash2, RotateCcw, History, PackagePlus, Repeat, SearchCheck, Check, User } from "lucide-react";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from "@/firebase";
@@ -59,11 +58,6 @@ type OnuFinderProps = {
     userId: string;
     isLoadingOnus: boolean;
 }
-
-type ShelfGroup = {
-    shelfName: string;
-    onus: OnuData[];
-};
 
 export function OnuFinder({ 
   activeView, 
@@ -83,7 +77,7 @@ export function OnuFinder({
   const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
 
   const handleConfirmRetire = () => {
-    if (onuToManage && profile) {
+    if (onuToManage) {
         const removedDate = new Date().toISOString();
         
         const onuRef = doc(firestore, 'onus', onuToManage.id);
@@ -94,8 +88,8 @@ export function OnuFinder({
         const historyEntry: OnuHistoryEntry = { 
           action: 'removed', 
           date: removedDate,
-          userId: profile.id,
-          userName: profile.name,
+          userId: profile?.id,
+          userName: profile?.name,
         };
 
         batch.update(onuRef, {
@@ -113,7 +107,7 @@ export function OnuFinder({
   };
   
   const handleConfirmRestore = () => {
-    if (onuToManage && profile) {
+    if (onuToManage) {
       const restoredDate = new Date().toISOString();
       const onuRef = doc(firestore, 'onus', onuToManage.id);
       const shelfRef = doc(firestore, 'shelves', onuToManage.shelfId);
@@ -123,8 +117,8 @@ export function OnuFinder({
       const historyEntry: OnuHistoryEntry = {
         action: 'restored',
         date: restoredDate,
-        userId: profile.id,
-        userName: profile.name,
+        userId: profile?.id,
+        userName: profile?.name,
       };
       
       batch.update(onuRef, {
@@ -161,28 +155,6 @@ export function OnuFinder({
         row.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm, onus, activeView]);
-  
-  const shelves: ShelfGroup[] = useMemo(() => {
-    if (activeView !== 'activas') return [];
-
-    const shelfMap: Record<string, { onus: OnuData[] }> = {};
-    const activeOnus = onus.filter(o => o.status === 'active');
-    
-    activeOnus.forEach(onu => {
-        const shelfName = onu.shelfName || 'Sin Estante';
-        if (!shelfMap[shelfName]) {
-            shelfMap[shelfName] = {
-                onus: [],
-            };
-        }
-        shelfMap[shelfName].onus.push(onu);
-    });
-    
-    return Object.entries(shelfMap)
-      .map(([shelfName, data]) => ({ shelfName, ...data }))
-      .sort((a, b) => a.shelfName.localeCompare(b.shelfName, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [onus, activeView]);
-
   
   const formatDate = (dateString: string | undefined, includeTime = false) => {
     if (!dateString) return 'N/A';
@@ -356,87 +328,26 @@ export function OnuFinder({
     );
   }
 
-  const renderSearchResults = () => (
+  const renderResults = () => (
     <div className="space-y-4">
         {filteredResults && filteredResults.length > 0 ? (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                {filteredResults.map((onu, index) => renderOnuCard(onu, index))}
            </div>
         ) : (
             <div className="text-center py-16 border-2 border-dashed rounded-lg">
                 <p className="text-muted-foreground">
-                  No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.
-                </p>
-            </div>
-        )}
-    </div>
-  );
-
-  const renderShelfAccordion = () => (
-    <div className="space-y-4">
-        {shelves.length > 0 ? (
-            <Accordion type="single" collapsible className="w-full" defaultValue={shelves.length > 0 ? shelves[0].shelfName : undefined}>
-                {shelves.map((shelfGroup) => {
-                    const onuCount = shelfGroup.onus.filter(o => o.type === 'onu').length;
-                    const stbCount = shelfGroup.onus.filter(o => o.type === 'stb').length;
-                    
-                    let countText = '';
-                    if (onuCount > 0) countText += `${onuCount} ONU(s)`;
-                    if (stbCount > 0) {
-                        if (onuCount > 0) countText += ' / ';
-                        countText += `${stbCount} STB(s)`;
-                    }
-                    if (countText === '') countText = '0 dispositivos';
-
-                    return (
-                        <AccordionItem value={shelfGroup.shelfName} key={shelfGroup.shelfName}>
-                            <AccordionTrigger>
-                                <div className="flex items-center gap-3">
-                                    <Server className="h-5 w-5 text-primary" />
-                                    <span className="font-medium">{shelfGroup.shelfName}</span>
-                                    <Badge variant="secondary">{countText}</Badge>
-                                </div>
-                            </AccordionTrigger>
-                            <AccordionContent>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-                                    {shelfGroup.onus.map((onu, index) => renderOnuCard(onu, index))}
-                                </div>
-                            </AccordionContent>
-                        </AccordionItem>
-                    )
-                })}
-            </Accordion>
-        ) : (
-            <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                <p className="text-muted-foreground">
-                  No hay ONUs activas para mostrar. Ve a 'Cargar Stock' para empezar.
-                </p>
-            </div>
-        )}
-    </div>
-  );
-
-  const renderRemovedList = () => {
-    const removedOnus = filteredResults.filter(o => o.status === 'removed');
-      return (
-      <div className="space-y-4">
-        {removedOnus.length > 0 ? (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
-               {removedOnus.map((onu, index) => renderOnuCard(onu, index))}
-           </div>
-        ) : (
-            <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                <p className="text-muted-foreground">
                   {searchTerm 
-                    ? <>No se encontraron ONUs retiradas para <strong className="text-foreground">"{searchTerm}"</strong>.</>
-                    : "No hay ONUs retiradas."
+                    ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
+                    : activeView === 'activas' 
+                        ? "No hay ONUs activas para mostrar. Ve a 'Cargar Stock' para empezar."
+                        : "No hay ONUs retiradas."
                   }
                 </p>
             </div>
         )}
-      </div>
-    )
-  };
+    </div>
+  );
   
   if (isLoadingOnus) {
     return (
@@ -493,7 +404,7 @@ export function OnuFinder({
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${onus?.length || 0} dispositivos...`}
+                    placeholder={`Buscar entre ${filteredResults?.length || 0} dispositivos...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -509,19 +420,13 @@ export function OnuFinder({
           
         <div className="mt-6">
             {isPending ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {[...Array(8)].map((_, i) => ( 
                       <Skeleton key={i} className="h-48 w-full" />
                     ))}
                 </div>
             ) : (
-              <>
-                {searchTerm ? (
-                  renderSearchResults()
-                ) : (
-                  activeView === 'activas' ? renderShelfAccordion() : renderRemovedList()
-                )}
-              </>
+              renderResults()
             )}
         </div>
 

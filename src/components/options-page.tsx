@@ -32,18 +32,19 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
     setIsExporting(true);
 
     try {
-      const dataToExport = allOnus.map(onu => ({
+      const activeOnus = allOnus.filter(onu => onu.status === 'active');
+      
+      const dataToExport = activeOnus.map(onu => ({
         'ID': onu.id,
         'Estante': onu.shelfName,
         'Tipo': onu.type.toUpperCase(),
-        'Estado': onu.status === 'active' ? 'Activa' : 'Retirada',
+        'Estado': 'Activa',
         'Fecha de Alta': formatDateForExport(onu.addedDate),
-        'Fecha de Baja': formatDateForExport(onu.removedDate),
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(dataToExport);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario ONUs");
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario ONUs Activas");
 
       // Auto-size columns
       const max_width = dataToExport.reduce((w, r) => Math.max(w, r.ID.length), 10);
@@ -53,14 +54,13 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
           { wch: 8 }, // Tipo
           { wch: 10 }, // Estado
           { wch: 20 }, // Fecha de Alta
-          { wch: 20 }, // Fecha de Baja
       ];
 
-      XLSX.writeFile(workbook, "inventario_onus.xlsx");
+      XLSX.writeFile(workbook, "inventario_onus_activas.xlsx");
 
       toast({
         title: "Exportación exitosa",
-        description: `${allOnus.length} dispositivos han sido exportados a Excel.`,
+        description: `${activeOnus.length} dispositivos activos han sido exportados a Excel.`,
       });
 
     } catch (error) {
@@ -89,14 +89,14 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
         </div>
         <Card>
            <CardHeader>
-             <CardTitle className="flex items-center gap-2"><FileDown className="h-5 w-5 text-primary"/>Exportar Inventario</CardTitle>
+             <CardTitle className="flex items-center gap-2"><FileDown className="h-5 w-5 text-primary"/>Exportar Inventario Activo</CardTitle>
              <CardDescription>
-               Descarga un archivo de Excel con la lista completa de todos los dispositivos registrados en el sistema (activos y retirados).
+               Descarga un archivo de Excel con la lista de todos los dispositivos actualmente activos en el sistema.
              </CardDescription>
            </CardHeader>
            <CardContent>
              <p className="text-sm text-muted-foreground">
-                Se exportarán un total de <strong>{allOnus.length}</strong> dispositivos.
+                Se exportarán un total de <strong>{allOnus.filter(onu => onu.status === 'active').length}</strong> dispositivos activos.
              </p>
            </CardContent>
            <CardFooter>
