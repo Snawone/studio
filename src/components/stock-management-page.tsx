@@ -1,5 +1,3 @@
-
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -633,5 +631,3 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     </section>
   );
 }
-
-    
