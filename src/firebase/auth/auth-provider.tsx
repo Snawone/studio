@@ -33,29 +33,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setAuthLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
+        
+        const idTokenResult = await firebaseUser.getIdTokenResult();
+        const isAdmin = !!idTokenResult.claims.isAdmin;
+
         const userDocRef = doc(firestore, 'users', firebaseUser.uid);
         const unsubscribeProfile = onSnapshot(userDocRef, (docSnap: DocumentSnapshot) => {
+          let userProfileData: UserProfile | null = null;
           if (docSnap.exists()) {
-            const userProfileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
-            
-            // Temporary admin logic
-            if (userProfileData.email === 'santiagowyka@gmail.com') {
-                userProfileData.isAdmin = true;
-            }
-
-            setProfile(userProfileData);
-          } else {
-            setProfile(null);
+            userProfileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
           }
+          
+          // Always merge the definite claim status from the token
+          setProfile(userProfileData ? { ...userProfileData, isAdmin } : {
+             id: firebaseUser.uid,
+             email: firebaseUser.email || '',
+             name: firebaseUser.displayName || 'Usuario',
+             searchList: [],
+             isAdmin: isAdmin
+          });
+
           setAuthLoading(false);
           if (!pathname.startsWith('/app')) {
             router.push('/app');
           }
+        }, (error) => {
+            console.error("Error fetching user profile:", error);
+            setUser(null);
+            setProfile(null);
+            setAuthLoading(false);
+            if (pathname.startsWith('/app')) {
+                router.push('/');
+            }
         });
+        
         return () => unsubscribeProfile();
+
       } else {
         setUser(null);
         setProfile(null);

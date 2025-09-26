@@ -3,37 +3,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check for admin claims
-    function isAdmin() {
-      return request.auth.token.isAdmin == true;
-    }
-
-    // ONUs: Admins can do anything, users can only read
-    match /onus/{onuId} {
-      allow read, write: if isAdmin();
-    }
-
-    // SHELVES: Admins can do anything, users can only read
-    match /shelves/{shelfId} {
-      allow read, write: if isAdmin();
-    }
-
-    // USERS:
-    // Any authenticated user can list the collection
-    match /users/{document=**} {
-       allow list: if request.auth != null;
-    }
-    // A user can get/write to their own document
+    // Users
+    // Only authenticated users can read the list of users.
+    // A user can only get/write their own document.
     match /users/{userId} {
-      allow get, write: if request.auth.uid == userId;
+      allow get, update, delete: if request.auth.uid == userId;
+      allow create: if request.auth.uid != null;
+    }
+    match /users/{document=**} {
+      allow list: if request.auth != null;
+    }
+    
+    // Shelves
+    // Only admins can manage shelves
+    match /shelves/{shelfId} {
+      allow read, write: if request.auth.token.isAdmin == true;
     }
 
-    // TECHNICAL GROUPS:
-    // Any authenticated user can read the list and create new groups.
-    // Only the creator (or an admin) can update or delete them.
+    // Onus
+    // Authenticated users can read.
+    // Only admins can create, update, or delete.
+    match /onus/{onuId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.token.isAdmin == true;
+    }
+
+    // Technical Groups
+    // Only admins can manage technical groups
     match /technical-groups/{groupId} {
-      allow read, create: if request.auth != null;
-      allow update, delete: if request.auth != null; // Simplified for now
+      allow read, write: if request.auth.token.isAdmin == true;
     }
   }
 }
