@@ -69,7 +69,7 @@ export default function AppPage() {
        case 'grupos-tecnicos':
         return <TechnicalGroupsPage />;
       case 'opciones':
-        return <OptionsPage allOnus={allOnus || []} />;
+        return <OptionsPage />;
       case 'historial':
         return <HistoryPage allOnus={allOnus || []} />;
       case 'en-busqueda':
