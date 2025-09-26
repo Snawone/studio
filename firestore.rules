@@ -1,36 +1,28 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check for admin role
-    function isAdmin() {
-      return request.auth.token.isAdmin == true;
-    }
-
-    // Rules for the 'users' collection
     match /users/{userId} {
-      // A user can get and update their own document.
       allow get, write: if request.auth.uid == userId;
-    }
-    match /users/{document=**} {
-        // An admin can list all users.
-        allow list: if isAdmin();
+      allow list: if request.auth.token.isAdmin == true;
     }
 
-    // Shelves can be managed by admins
-    match /shelves/{shelfId} {
-      allow read, create, update, delete: if isAdmin();
-    }
-
-    // ONUs can be managed by admins
     match /onus/{onuId} {
-      allow read, create, update, delete: if isAdmin();
+      allow read: if request.auth != null;
+      allow write: if request.auth.token.isAdmin == true;
     }
-    
-    // Technical groups can be managed by any authenticated user
+
+    match /shelves/{shelfId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.token.isAdmin == true;
+    }
+
     match /technical-groups/{groupId} {
-      allow read, create, update, delete: if request.auth != null;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
     }
   }
 }
