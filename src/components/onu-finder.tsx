@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useMemo, useTransition, useRef, useEffect, Dispatch, SetStateAction } from "react";
@@ -108,7 +109,7 @@ export function OnuFinder({
   };
   
   const handleConfirmRestore = () => {
-    if (onuToManage) {
+    if (onuToManage && profile) {
       const restoredDate = new Date().toISOString();
       const onuRef = doc(firestore, 'onus', onuToManage.id);
       const shelfRef = doc(firestore, 'shelves', onuToManage.shelfId);
@@ -118,13 +119,14 @@ export function OnuFinder({
       const historyEntry: OnuHistoryEntry = {
         action: 'restored',
         date: restoredDate,
-        userId: profile?.id,
-        userName: profile?.name,
+        userId: profile.id,
+        userName: profile.name,
       };
       
       batch.update(onuRef, {
         status: 'active',
         removedDate: null,
+        addedDate: restoredDate, // Update the addedDate to the restore date
         history: [...(onuToManage.history || []), historyEntry]
       });
 
@@ -209,8 +211,9 @@ export function OnuFinder({
     const idSuffix = onuId.slice(-6);
     const isInSearchList = searchList.includes(row.id);
     
-    const creationEntry = row.history?.find(h => h.action === 'created' || h.action === 'added');
-    const creatorName = creationEntry?.userName;
+    const lastActiveEntry = row.history?.slice().reverse().find(h => h.action === 'created' || h.action === 'added' || h.action === 'restored');
+    const creatorName = lastActiveEntry?.userName;
+    const addedDateLabel = lastActiveEntry?.action === 'restored' ? 'Reingresada:' : 'Agregada:';
   
     return (
       <Card key={`${row.id}-${index}`} className={`group flex flex-col justify-between transition-all duration-300 ${isExactMatch ? 'border-primary shadow-lg scale-105' : ''} ${isInSearchList ? 'border-blue-500' : ''}`}>
@@ -274,7 +277,7 @@ export function OnuFinder({
                 <CalendarIcon className="h-4 w-4 text-muted-foreground mt-0.5"/>
                 <div>
                     <p className="font-medium">
-                        <span className="text-muted-foreground mr-2">Agregada:</span>
+                        <span className="text-muted-foreground mr-2">{addedDateLabel}</span>
                         <span className="text-foreground text-xs">{formatDate(row.addedDate, true)}</span>
                     </p>
                     {creatorName && (
@@ -501,5 +504,7 @@ export function OnuFinder({
     </section>
   );
 }
+
+    
 
     
