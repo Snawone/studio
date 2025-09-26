@@ -275,19 +275,19 @@ export function OnuFinder({
               <span className="text-muted-foreground mr-2">Estante:</span> 
               <span className={`font-bold text-foreground ${isExactMatch ? 'text-lg' : ''}`}>{row.shelfName}</span>
             </p>
-            <div className="space-y-1">
-                <p className="flex items-center font-medium">
-                <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-                <span className="text-muted-foreground mr-2">Agregada:</span> 
-                <span className="text-foreground text-xs">{formatDate(row.addedDate, true)}</span>
-                </p>
-                {creatorName && (
-                     <p className="flex items-center font-medium pl-6">
-                        <User className="mr-2 h-3 w-3 text-muted-foreground" />
-                        <span className="text-muted-foreground mr-1 text-xs">Por:</span> 
-                        <span className="text-foreground text-xs">{creatorName}</span>
+            <div className="flex items-start gap-2">
+                <CalendarIcon className="h-4 w-4 text-muted-foreground mt-0.5"/>
+                <div>
+                    <p className="font-medium">
+                        <span className="text-muted-foreground mr-2">Agregada:</span>
+                        <span className="text-foreground text-xs">{formatDate(row.addedDate, true)}</span>
                     </p>
-                )}
+                    {creatorName && (
+                        <p className="text-xs text-muted-foreground">
+                            Por: {creatorName}
+                        </p>
+                    )}
+                </div>
             </div>
             {isRetired && row.removedDate && (
                <p className="flex items-center font-medium text-destructive/80">
@@ -543,3 +543,4 @@ export function OnuFinder({
     
 
     
+
