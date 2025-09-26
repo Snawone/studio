@@ -15,7 +15,7 @@ import { ShelvesManagementPage } from '@/components/shelves-management-page';
 import { TechnicalGroupsPage } from '@/components/technical-groups-page';
 import { useCollection, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
-import { type OnuData, type UserProfile } from '@/lib/data';
+import { type OnuData, type UserProfile, type Shelf } from '@/lib/data';
 import { Button } from '@/components/ui/button';
 
 type ViewType = 'activas' | 'retiradas' | 'opciones' | 'historial' | 'en-busqueda' | 'cargar-stock' | 'estantes' | 'grupos-tecnicos';
@@ -28,13 +28,17 @@ export default function AppPage() {
 
   const onusCollectionRef = useMemoFirebase(() => query(collection(firestore, 'onus'), orderBy('addedDate', 'desc')), [firestore]);
   const { data: allOnus, isLoading: isOnusLoading } = useCollection<OnuData>(onusCollectionRef);
+  
+  const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
+  const { data: allShelves, isLoading: areShelvesLoading } = useCollection<Shelf>(shelvesCollectionRef);
+
 
   const searchListOnus = useMemo(() => {
     if (!profile || !allOnus || !profile.searchList) return [];
     return allOnus.filter(onu => profile.searchList.includes(onu.id));
   }, [allOnus, profile]);
 
-  if (isAuthLoading || !user || !profile) {
+  if (isAuthLoading || !user || !profile || areShelvesLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -47,6 +51,7 @@ export default function AppPage() {
   const renderActiveView = () => {
     const commonProps = {
       onus: allOnus || [],
+      shelves: allShelves || [],
       searchList: profile.searchList || [],
       userId: user.uid,
       isLoadingOnus: isOnusLoading,
@@ -145,7 +150,7 @@ export default function AppPage() {
                 <SidebarMenuButton onClick={() => setActiveView('opciones')} isActive={activeView === 'opciones'} tooltip='Opciones'>
                     <Settings />
                     Opciones
-                </SidebarMenuButton>
+                </Button>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarContent>

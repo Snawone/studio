@@ -7,6 +7,7 @@ export type OnuHistoryEntry = {
   source?: 'file' | 'manual';
   userId?: string;
   userName?: string;
+  description?: string;
 };
 
 export type OnuData = {

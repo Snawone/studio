@@ -45,7 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Server, Tag, Loader2, Calendar as CalendarIcon, Trash2, RotateCcw, History, PackagePlus, Repeat, SearchCheck, Check, User } from "lucide-react";
+import { Search, Server, Tag, Loader2, Calendar as CalendarIcon, Trash2, RotateCcw, History, PackagePlus, Repeat, SearchCheck, Check, User, Info, ArchiveRestore } from "lucide-react";
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useFirestore } from "@/firebase";
@@ -56,6 +56,7 @@ import { useAuthContext } from "@/firebase/auth/auth-provider";
 type OnuFinderProps = {
     activeView: 'activas' | 'retiradas';
     onus: OnuData[];
+    shelves: Shelf[];
     searchList: string[];
     userId: string;
     isLoadingOnus: boolean;
@@ -64,6 +65,7 @@ type OnuFinderProps = {
 export function OnuFinder({ 
   activeView, 
   onus,
+  shelves,
   searchList,
   userId,
   isLoadingOnus,
@@ -76,10 +78,15 @@ export function OnuFinder({
 
   const [onuToManage, setOnuToManage] = useState<OnuData | null>(null);
   const [isConfirmRetireOpen, setIsConfirmRetireOpen] = useState(false);
-  const [isConfirmRestoreOpen, setIsConfirmRestoreOpen] = useState(false);
+  
+  // States for the new restore dialog
+  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
+  const [restoreTargetShelfId, setRestoreTargetShelfId] = useState<string | null>(null);
+  const [isSubmittingRestore, setIsSubmittingRestore] = useState(false);
+
 
   const handleConfirmRetire = () => {
-    if (onuToManage) {
+    if (onuToManage && profile) {
         const removedDate = new Date().toISOString();
         
         const onuRef = doc(firestore, 'onus', onuToManage.id);
@@ -90,8 +97,8 @@ export function OnuFinder({
         const historyEntry: OnuHistoryEntry = { 
           action: 'removed', 
           date: removedDate,
-          userId: profile?.id,
-          userName: profile?.name,
+          userId: profile.id,
+          userName: profile.name,
         };
 
         batch.update(onuRef, {
@@ -107,37 +114,61 @@ export function OnuFinder({
     setIsConfirmRetireOpen(false);
     setOnuToManage(null);
   };
-  
-  const handleConfirmRestore = () => {
-    if (onuToManage && profile) {
-      const restoredDate = new Date().toISOString();
-      const onuRef = doc(firestore, 'onus', onuToManage.id);
-      const shelfRef = doc(firestore, 'shelves', onuToManage.shelfId);
 
-      const batch = writeBatch(firestore);
+  const handleConfirmRestore = async () => {
+    if (!onuToManage || !profile || !restoreTargetShelfId) return;
 
-      const historyEntry: OnuHistoryEntry = {
+    setIsSubmittingRestore(true);
+
+    const restoredDate = new Date().toISOString();
+    const batch = writeBatch(firestore);
+    const onuRef = doc(firestore, 'onus', onuToManage.id);
+    
+    const targetShelf = shelves.find(s => s.id === restoreTargetShelfId);
+    if (!targetShelf) {
+        console.error("Target shelf not found");
+        setIsSubmittingRestore(false);
+        return;
+    }
+
+    const historyMessage = onuToManage.shelfId === targetShelf.id 
+      ? `Dispositivo devuelto al estante original ${targetShelf.name}.`
+      : `Dispositivo reubicado al estante ${targetShelf.name}.`;
+
+    const historyEntry: OnuHistoryEntry = {
         action: 'restored',
         date: restoredDate,
         userId: profile.id,
         userName: profile.name,
-      };
-      
-      batch.update(onuRef, {
+        description: historyMessage
+    };
+
+    // Update ONU document
+    batch.update(onuRef, {
         status: 'active',
         removedDate: null,
-        addedDate: restoredDate, // Update the addedDate to the restore date
+        addedDate: restoredDate,
+        shelfId: targetShelf.id,
+        shelfName: targetShelf.name,
         history: [...(onuToManage.history || []), historyEntry]
-      });
+    });
 
-      batch.update(shelfRef, { itemCount: increment(1) });
-      
-      batch.commit();
+    // Increment target shelf count
+    batch.update(doc(firestore, 'shelves', targetShelf.id), { itemCount: increment(1) });
+    
+    // Decrement original shelf count if it's different
+    if (onuToManage.shelfId !== targetShelf.id) {
+        batch.update(doc(firestore, 'shelves', onuToManage.shelfId), { itemCount: increment(-1) });
     }
-    setIsConfirmRestoreOpen(false);
-    setOnuToManage(null);
-  };
 
+    await batch.commit();
+
+    setIsSubmittingRestore(false);
+    setIsRestoreDialogOpen(false);
+    setOnuToManage(null);
+    setRestoreTargetShelfId(null);
+  };
+  
   const handleToggleSearchList = (onu: OnuData) => {
     const userDocRef = doc(firestore, 'users', userId);
     let newSearchList;
@@ -186,12 +217,15 @@ export function OnuFinder({
   };
 
   const getHistoryMessage = (entry: OnuHistoryEntry) => {
+     if (entry.description) {
+      return entry.description;
+    }
     const baseMessage = (() => {
         switch (entry.action) {
-            case 'created': return `Creada manualmente`;
+            case 'created': return `Dispositivo creado.`;
             case 'added': return `Agregada al inventario`;
             case 'removed': return `Retirada del inventario`;
-            case 'restored': return `Devuelta al inventario`;
+            case 'restored': return `Dispositivo devuelto al inventario.`;
             default: return `Acción desconocida`;
         }
     })();
@@ -244,7 +278,7 @@ export function OnuFinder({
                     </DialogTrigger>
                     <DialogContent>
                         <DialogHeader>
-                            <DialogTitle>Historial de la ONU</DialogTitle>
+                            <DialogTitle>Historial del Dispositivo</DialogTitle>
                             <DialogDescription className="font-mono break-all pt-2">{row.id}</DialogDescription>
                         </DialogHeader>
                         <div className="max-h-80 overflow-y-auto pr-4">
@@ -313,7 +347,8 @@ export function OnuFinder({
               className="w-full text-green-600 hover:text-green-700 hover:bg-green-50 border-green-600/50"
               onClick={() => {
                 setOnuToManage(row);
-                setIsConfirmRestoreOpen(true);
+                setRestoreTargetShelfId(null);
+                setIsRestoreDialogOpen(true);
               }}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -410,6 +445,15 @@ export function OnuFinder({
         </section>
     );
   }
+  
+  const originalShelf = shelves.find(s => s.id === onuToManage?.shelfId);
+  const originalShelfHasSpace = originalShelf ? originalShelf.itemCount < originalShelf.capacity : false;
+  
+  const availableShelves = shelves.filter(s => 
+    s.id !== onuToManage?.shelfId &&
+    s.type === onuToManage?.type &&
+    s.itemCount < s.capacity
+  );
 
   return (
     <section className="w-full max-w-7xl mx-auto flex flex-col gap-8">
@@ -467,7 +511,7 @@ export function OnuFinder({
             )}
         </div>
 
-      {/* Confirmation Dialogs */}
+      {/* Retire Confirmation Dialog */}
       <AlertDialog open={isConfirmRetireOpen} onOpenChange={setIsConfirmRetireOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -485,26 +529,79 @@ export function OnuFinder({
         </AlertDialogContent>
       </AlertDialog>
       
-      <AlertDialog open={isConfirmRestoreOpen} onOpenChange={setIsConfirmRestoreOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Confirmar devolución?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción devolverá el dispositivo <strong className="break-all">{onuToManage?.id}</strong> a la lista de activos y aumentará el contador de items en el estante <strong>{onuToManage?.shelfName}</strong>.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setOnuToManage(null)}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmRestore}>
-              Sí, devolver
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Restore Dialog */}
+      <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+                <DialogTitle className="flex items-center gap-2"><ArchiveRestore className="h-5 w-5"/>Devolver Dispositivo</DialogTitle>
+                <DialogDescription>
+                    Selecciona dónde quieres reingresar el dispositivo <strong className="font-mono break-all">{onuToManage?.id}</strong>.
+                </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+                <div className={`p-3 rounded-md border ${originalShelfHasSpace ? 'border-green-500 bg-green-50' : 'border-yellow-500 bg-yellow-50'}`}>
+                   <div className="flex items-start gap-3">
+                     <Info className={`h-5 w-5 mt-0.5 ${originalShelfHasSpace ? 'text-green-600' : 'text-yellow-600'}`} />
+                     <div>
+                        <h4 className="font-semibold">Estante Original: {originalShelf?.name}</h4>
+                        {originalShelfHasSpace ? (
+                            <p className="text-sm text-green-700">Hay espacio disponible en este estante.</p>
+                        ) : (
+                            <p className="text-sm text-yellow-700">Este estante está lleno. No se puede devolver aquí.</p>
+                        )}
+                     </div>
+                   </div>
+                   {originalShelfHasSpace && (
+                      <Button 
+                        size="sm" 
+                        className="w-full mt-3"
+                        onClick={() => setRestoreTargetShelfId(originalShelf!.id)}
+                        variant={restoreTargetShelfId === originalShelf!.id ? 'default' : 'outline'}
+                      >
+                        {restoreTargetShelfId === originalShelf!.id && <Check className="mr-2 h-4 w-4"/>}
+                        Devolver a {originalShelf?.name}
+                      </Button>
+                   )}
+                </div>
+                
+                {availableShelves.length > 0 && (
+                    <div>
+                        <Label htmlFor="shelf-select">O reubicar en otro estante:</Label>
+                        <Select
+                            onValueChange={(value) => setRestoreTargetShelfId(value)}
+                            value={restoreTargetShelfId && restoreTargetShelfId !== originalShelf?.id ? restoreTargetShelfId : ""}
+                        >
+                            <SelectTrigger id="shelf-select" className="mt-1">
+                                <SelectValue placeholder="Seleccionar un nuevo estante..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {availableShelves.map(shelf => (
+                                    <SelectItem key={shelf.id} value={shelf.id}>
+                                        {shelf.name} ({shelf.itemCount}/{shelf.capacity})
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+            </div>
+            <DialogFooter className="sm:justify-between gap-2">
+                 <DialogClose asChild>
+                    <Button type="button" variant="secondary">
+                        Cancelar
+                    </Button>
+                </DialogClose>
+                <Button 
+                    type="button" 
+                    onClick={handleConfirmRestore}
+                    disabled={!restoreTargetShelfId || isSubmittingRestore}
+                >
+                    {isSubmittingRestore && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                    {isSubmittingRestore ? 'Guardando...' : 'Confirmar Devolución'}
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
-
-    
-
-    
