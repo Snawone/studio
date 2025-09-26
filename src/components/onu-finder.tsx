@@ -279,7 +279,7 @@ export function OnuFinder({
                 <p className="flex items-center font-medium">
                 <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
                 <span className="text-muted-foreground mr-2">Agregada:</span> 
-                <span className="text-foreground text-xs">{formatDate(row.addedDate)}</span>
+                <span className="text-foreground text-xs">{formatDate(row.addedDate, true)}</span>
                 </p>
                 {creatorName && (
                      <p className="flex items-center font-medium pl-6">
@@ -293,7 +293,7 @@ export function OnuFinder({
                <p className="flex items-center font-medium text-destructive/80">
                   <Trash2 className="mr-2 h-4 w-4" />
                   <span className="mr-2">Retirada:</span> 
-                  <span className="text-xs">{formatDate(row.removedDate)}</span>
+                  <span className="text-xs">{formatDate(row.removedDate, true)}</span>
               </p>
             )}
           </CardContent>

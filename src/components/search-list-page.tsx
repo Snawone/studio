@@ -116,7 +116,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), "dd/MM/yyyy", { locale: es });
+      return format(new Date(dateString), "dd/MM/yyyy, HH:mm", { locale: es });
     } catch (e) {
       return 'Fecha inválida';
     }
