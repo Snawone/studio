@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -40,6 +41,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 
 const deviceSchema = z.object({
   ids: z.string().min(1, "Debe ingresar al menos un ID de dispositivo."),
@@ -551,26 +553,31 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
           <CardDescription>Busca un dispositivo por su ID o filtra por estante para moverlo o eliminarlo del inventario.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-col md:flex-row gap-2">
-            <div className="relative flex-grow">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por ID de dispositivo..."
-                value={managementSearchTerm}
-                onChange={(e) => setManagementSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
-                className="pl-10"
-              />
+           <div className="flex flex-col md:flex-row gap-4 md:items-center md:flex-wrap">
+            <div className="flex-grow flex items-center gap-2">
+              <div className="relative flex-grow">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por ID de dispositivo..."
+                  value={managementSearchTerm}
+                  onChange={(e) => setManagementSearchTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
+                  className="pl-10"
+                />
+              </div>
+              <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm} className="shrink-0">
+                {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Buscar
+              </Button>
             </div>
-            <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm}>
-              {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Buscar por ID
-            </Button>
+            
+            <Separator className="my-2 md:hidden" />
+            
             <div className="flex items-center gap-2">
-                <div className="border-l h-6 hidden md:block mx-2"></div>
-                <Label htmlFor="shelf-filter" className="text-sm shrink-0">o Filtrar por Estante:</Label>
+              <Label htmlFor="shelf-filter" className="text-sm shrink-0">o Filtrar por Estante:</Label>
+              <div className="flex-grow">
                 <Select onValueChange={(value) => setFilterShelfId(value === 'none' ? null : value)} value={filterShelfId || 'none'}>
-                    <SelectTrigger id="shelf-filter" className="w-full md:w-[250px]">
+                    <SelectTrigger id="shelf-filter" className="w-full">
                         <SelectValue placeholder="Seleccionar estante..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -582,6 +589,7 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
                         ))}
                     </SelectContent>
                 </Select>
+              </div>
             </div>
           </div>
           
