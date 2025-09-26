@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { 
     Dialog, 
     DialogContent, 
@@ -146,14 +147,20 @@ export function OnuFinder({
     updateDocumentNonBlocking(userDocRef, { searchList: newSearchList });
   };
 
-  const filteredResults = useMemo(() => {
+  const groupedOnus = useMemo(() => {
     const viewFilter = activeView === 'activas' ? 'active' : 'removed';
     const relevantOnus = onus.filter(onu => onu.status === viewFilter);
-    if (!searchTerm) return relevantOnus;
+    let filteredOnus = relevantOnus;
+
+    if (searchTerm) {
+      filteredOnus = relevantOnus.filter(onu => onu.id.toLowerCase().includes(searchTerm.toLowerCase()));
+    }
     
-    return relevantOnus.filter((row) => 
-        row.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    return filteredOnus.reduce((acc, onu) => {
+        (acc[onu.shelfName] = acc[onu.shelfName] || []).push(onu);
+        return acc;
+    }, {} as Record<string, OnuData[]>);
+
   }, [searchTerm, onus, activeView]);
   
   const formatDate = (dateString: string | undefined, includeTime = false) => {
@@ -328,26 +335,45 @@ export function OnuFinder({
     );
   }
 
-  const renderResults = () => (
-    <div className="space-y-4">
-        {filteredResults && filteredResults.length > 0 ? (
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-               {filteredResults.map((onu, index) => renderOnuCard(onu, index))}
-           </div>
-        ) : (
-            <div className="text-center py-16 border-2 border-dashed rounded-lg">
-                <p className="text-muted-foreground">
-                  {searchTerm 
-                    ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
-                    : activeView === 'activas' 
-                        ? "No hay ONUs activas para mostrar. Ve a 'Cargar Stock' para empezar."
-                        : "No hay ONUs retiradas."
-                  }
-                </p>
-            </div>
-        )}
-    </div>
-  );
+  const renderResults = () => {
+    const sortedShelfNames = Object.keys(groupedOnus).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+    return (
+        <div className="space-y-4">
+            {sortedShelfNames.length > 0 ? (
+                <Accordion type="single" collapsible className="w-full" defaultValue={sortedShelfNames.length > 0 ? sortedShelfNames[0] : undefined}>
+                    {sortedShelfNames.map(shelfName => (
+                        <AccordionItem value={shelfName} key={shelfName}>
+                            <AccordionTrigger>
+                                <div className="flex items-center gap-2">
+                                    <Server className="h-5 w-5 text-muted-foreground" />
+                                    <span>{shelfName}</span>
+                                    <span className="text-xs text-muted-foreground">({groupedOnus[shelfName].length} items)</span>
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-2">
+                                    {groupedOnus[shelfName].map((onu, index) => renderOnuCard(onu, index))}
+                                </div>
+                            </AccordionContent>
+                        </AccordionItem>
+                    ))}
+                </Accordion>
+            ) : (
+                <div className="text-center py-16 border-2 border-dashed rounded-lg">
+                    <p className="text-muted-foreground">
+                        {searchTerm
+                            ? <>No se encontraron resultados para <strong className="text-foreground">"{searchTerm}"</strong>.</>
+                            : activeView === 'activas'
+                                ? "No hay ONUs activas para mostrar. Ve a 'Cargar Stock' para empezar."
+                                : "No hay ONUs retiradas."
+                        }
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+};
   
   if (isLoadingOnus) {
     return (
@@ -404,7 +430,7 @@ export function OnuFinder({
                 <Input
                     id="search-term"
                     type="text"
-                    placeholder={`Buscar entre ${filteredResults?.length || 0} dispositivos...`}
+                    placeholder={`Buscar entre ${onus.filter(o => o.status === activeView.slice(0, -1)).length} dispositivos...`}
                     value={searchTerm}
                     onChange={(e) => {
                       startTransition(() => {
@@ -420,10 +446,10 @@ export function OnuFinder({
           
         <div className="mt-6">
             {isPending ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {[...Array(8)].map((_, i) => ( 
-                      <Skeleton key={i} className="h-48 w-full" />
-                    ))}
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
                 </div>
             ) : (
               renderResults()
@@ -467,5 +493,3 @@ export function OnuFinder({
     </section>
   );
 }
-
-    
