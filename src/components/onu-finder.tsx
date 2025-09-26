@@ -215,6 +215,9 @@ export function OnuFinder({
     const idPrefix = onuId.slice(0, -6);
     const idSuffix = onuId.slice(-6);
     const isInSearchList = searchList.includes(row.id);
+    
+    const creationEntry = row.history?.find(h => h.action === 'created' || h.action === 'added');
+    const creatorName = creationEntry?.userName;
   
     return (
       <Card key={`${row.id}-${index}`} className={`group flex flex-col justify-between transition-all duration-300 ${isExactMatch ? 'border-primary shadow-lg scale-105' : ''} ${isInSearchList ? 'border-blue-500' : ''}`}>
@@ -271,11 +274,20 @@ export function OnuFinder({
               <span className="text-muted-foreground mr-2">Estante:</span> 
               <span className={`font-bold text-foreground ${isExactMatch ? 'text-lg' : ''}`}>{row.shelfName}</span>
             </p>
-            <p className="flex items-center font-medium">
-              <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground mr-2">Agregada:</span> 
-              <span className="text-foreground text-xs">{formatDate(row.addedDate)}</span>
-            </p>
+            <div className="space-y-1">
+                <p className="flex items-center font-medium">
+                <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground mr-2">Agregada:</span> 
+                <span className="text-foreground text-xs">{formatDate(row.addedDate)}</span>
+                </p>
+                {creatorName && (
+                     <p className="flex items-center font-medium pl-6">
+                        <User className="mr-2 h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground mr-1 text-xs">Por:</span> 
+                        <span className="text-foreground text-xs">{creatorName}</span>
+                    </p>
+                )}
+            </div>
             {isRetired && row.removedDate && (
                <p className="flex items-center font-medium text-destructive/80">
                   <Trash2 className="mr-2 h-4 w-4" />
