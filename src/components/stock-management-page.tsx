@@ -416,8 +416,8 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
         ) : (
           <Form {...deviceForm}>
             <form onSubmit={deviceForm.handleSubmit(handleAddDevices)}>
-              <CardContent className="space-y-4">
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <CardContent>
+                 <div className="space-y-4">
                     <FormField
                       control={deviceForm.control}
                       name="ids"
@@ -436,7 +436,6 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
                         </FormItem>
                       )}
                     />
-                    <div className='space-y-4'>
                     <FormField
                       control={deviceForm.control}
                       name="type"
@@ -479,7 +478,6 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
                         </FormItem>
                       )}
                     />
-                    </div>
                 </div>
               </CardContent>
               <CardFooter>
@@ -629,5 +627,3 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     </section>
   );
 }
-
-    
