@@ -3,35 +3,34 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users
-    // Only authenticated users can read the list of users.
-    // A user can only get/write their own document.
+    // Helper function to check for admin role
+    function isAdmin() {
+      return request.auth.token.isAdmin == true;
+    }
+
+    // Rules for the 'users' collection
     match /users/{userId} {
-      allow get, update, delete: if request.auth.uid == userId;
-      allow create: if request.auth.uid != null;
+      // A user can get and update their own document.
+      allow get, write: if request.auth.uid == userId;
     }
     match /users/{document=**} {
-      allow list: if request.auth != null;
+        // An admin can list all users.
+        allow list: if isAdmin();
+    }
+
+    // Shelves can be managed by admins
+    match /shelves/{shelfId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    // ONUs can be managed by admins
+    match /onus/{onuId} {
+      allow read, create, update, delete: if isAdmin();
     }
     
-    // Shelves
-    // Only admins can manage shelves
-    match /shelves/{shelfId} {
-      allow read, write: if request.auth.token.isAdmin == true;
-    }
-
-    // Onus
-    // Authenticated users can read.
-    // Only admins can create, update, or delete.
-    match /onus/{onuId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.token.isAdmin == true;
-    }
-
-    // Technical Groups
-    // Only admins can manage technical groups
+    // Technical groups can be managed by any authenticated user
     match /technical-groups/{groupId} {
-      allow read, write: if request.auth.token.isAdmin == true;
+      allow read, create, update, delete: if request.auth != null;
     }
   }
 }
