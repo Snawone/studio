@@ -83,17 +83,17 @@ const DeviceRow = ({ device, allShelves, onMove, onDelete }: { device: OnuData, 
     };
 
     return (
-        <div className="p-4 border rounded-lg space-y-4 bg-muted/30">
+        <div className="p-3 border rounded-lg space-y-3 bg-muted/30">
             <div>
                 <h4 className="font-semibold font-mono text-sm break-all">{device.id}</h4>
                 <p className="text-xs text-muted-foreground">Tipo: {device.type.toUpperCase()}</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
                 <div className="flex items-end gap-2">
                     <div className="flex-grow">
                         <Label htmlFor={`move-shelf-${device.id}`} className="text-xs">Mover a Nuevo Estante</Label>
                         <Select onValueChange={setTargetShelfId} disabled={availableShelvesForMove.length === 0}>
-                            <SelectTrigger id={`move-shelf-${device.id}`}>
+                            <SelectTrigger id={`move-shelf-${device.id}`} className="h-9">
                                 <SelectValue placeholder={availableShelvesForMove.length > 0 ? "Seleccionar..." : "No hay estantes"} />
                             </SelectTrigger>
                             <SelectContent>
@@ -105,14 +105,14 @@ const DeviceRow = ({ device, allShelves, onMove, onDelete }: { device: OnuData, 
                             </SelectContent>
                         </Select>
                     </div>
-                    <Button onClick={handleMoveClick} disabled={!targetShelfId || isMoving} size="icon">
+                    <Button onClick={handleMoveClick} disabled={!targetShelfId || isMoving} size="icon" className="h-9 w-9 shrink-0">
                         {isMoving ? <Loader2 className="h-4 w-4 animate-spin"/> : <Move className="h-4 w-4"/>}
                     </Button>
                 </div>
                 <div className="flex justify-end items-end h-full">
                      <AlertDialog>
                         <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm">
+                            <Button variant="destructive" size="sm" className="h-9">
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Eliminar
                             </Button>
@@ -427,7 +427,7 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
                           <FormControl>
                             <Textarea 
                               placeholder="2430011054007532 2430011054007533..." 
-                              className="h-32"
+                              className="h-32 text-sm"
                               {...field} 
                               autoFocus 
                             />
@@ -551,40 +551,40 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
           <CardDescription>Busca un dispositivo por su ID o filtra por estante para moverlo o eliminarlo del inventario.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-            <div className="flex flex-col md:flex-row gap-2">
-                <div className="flex-grow flex items-center gap-2">
-                    <div className="relative w-full">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                        placeholder="Buscar por ID de dispositivo..."
-                        value={managementSearchTerm}
-                        onChange={(e) => setManagementSearchTerm(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
-                        className="pl-10"
-                        />
-                    </div>
-                    <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm} className="shrink-0">
-                        {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Buscar
-                    </Button>
-                </div>
-                
-                <div className="flex-grow flex items-center gap-2">
-                    <Label htmlFor="shelf-filter" className="text-sm shrink-0">Filtrar:</Label>
-                    <Select onValueChange={(value) => setFilterShelfId(value === 'none' ? null : value)} value={filterShelfId || 'none'}>
-                        <SelectTrigger id="shelf-filter" className="w-full">
-                            <SelectValue placeholder="Seleccionar estante..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="none">-- Ninguno --</SelectItem>
-                            {allShelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map(shelf => (
-                                <SelectItem key={shelf.id} value={shelf.id}>
-                                    {shelf.name}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row gap-2">
+                  <div className="relative flex-grow">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                      placeholder="Buscar por ID de dispositivo..."
+                      value={managementSearchTerm}
+                      onChange={(e) => setManagementSearchTerm(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
+                      className="pl-10 text-sm"
+                      />
+                  </div>
+                  <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm} className="shrink-0">
+                      {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Buscar
+                  </Button>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                  <Label htmlFor="shelf-filter" className="text-sm shrink-0">O filtrar por estante:</Label>
+                  <Select onValueChange={(value) => setFilterShelfId(value === 'none' ? null : value)} value={filterShelfId || 'none'}>
+                      <SelectTrigger id="shelf-filter" className="w-full">
+                          <SelectValue placeholder="Seleccionar estante..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="none">-- Ninguno --</SelectItem>
+                          {allShelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map(shelf => (
+                              <SelectItem key={shelf.id} value={shelf.id}>
+                                  {shelf.name}
+                              </SelectItem>
+                          ))}
+                      </SelectContent>
+                  </Select>
+              </div>
             </div>
           
           <div className="pt-4 space-y-4">
