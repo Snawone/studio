@@ -45,7 +45,8 @@ export type FileInfo = {
 }
 
 export type Technician = {
-  name: string;
+  userId: string;
+  userName: string;
   addedAt: string;
 };
 

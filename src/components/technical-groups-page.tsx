@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
-import { collection, doc, writeBatch } from 'firebase/firestore';
-import { Users, Loader2, PlusCircle, Trash2, UserPlus, UserMinus } from 'lucide-react';
+import { collection, doc, writeBatch, query, where, getDocs } from 'firebase/firestore';
+import { Users, Loader2, PlusCircle, Trash2, UserPlus, UserMinus, Search } from 'lucide-react';
 import { type TechnicalGroup, type Technician, type UserProfile } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
@@ -22,13 +22,11 @@ import { useAuthContext } from '@/firebase/auth/auth-provider';
 const createGroupSchema = z.object({
   name: z.string().min(3, "El nombre del grupo debe tener al menos 3 caracteres."),
 });
-
 type CreateGroupFormValues = z.infer<typeof createGroupSchema>;
 
 const addTechnicianSchema = z.object({
-  name: z.string().min(3, "El nombre del técnico debe tener al menos 3 caracteres."),
+  email: z.string().email("Por favor, ingresa un correo válido."),
 });
-
 type AddTechnicianFormValues = z.infer<typeof addTechnicianSchema>;
 
 
@@ -42,7 +40,7 @@ export function TechnicalGroupsPage() {
 
   const groupsCollectionRef = useMemoFirebase(() => collection(firestore, 'technical-groups'), [firestore]);
   const { data: technicalGroups, isLoading: isLoadingGroups } = useCollection<TechnicalGroup>(groupsCollectionRef);
-
+  
   const createGroupForm = useForm<CreateGroupFormValues>({
     resolver: zodResolver(createGroupSchema),
     defaultValues: { name: '' },
@@ -50,7 +48,7 @@ export function TechnicalGroupsPage() {
 
   const addTechnicianForm = useForm<AddTechnicianFormValues>({
     resolver: zodResolver(addTechnicianSchema),
-    defaultValues: { name: '' },
+    defaultValues: { email: '' },
   });
 
   const handleCreateGroup = async (values: CreateGroupFormValues) => {
@@ -61,11 +59,15 @@ export function TechnicalGroupsPage() {
       technicians: [],
     };
     
-    await addDocumentNonBlocking(collection(firestore, 'technical-groups'), newGroupData);
-    
-    toast({ title: "Grupo creado", description: `El grupo "${values.name}" ha sido creado.` });
-    setIsSubmittingGroup(false);
-    createGroupForm.reset();
+    try {
+        await addDocumentNonBlocking(collection(firestore, 'technical-groups'), newGroupData);
+        toast({ title: "Grupo creado", description: `El grupo "${values.name}" ha sido creado.` });
+        createGroupForm.reset();
+    } catch(e) {
+        toast({ variant: 'destructive', title: 'Error', description: 'No se pudo crear el grupo.' });
+    } finally {
+        setIsSubmittingGroup(false);
+    }
   };
   
   const handleAddTechnician = async (groupId: string, values: AddTechnicianFormValues) => {
@@ -77,34 +79,57 @@ export function TechnicalGroupsPage() {
         return;
     }
 
-    const newTechnician: Technician = {
-        name: values.name,
-        addedAt: new Date().toISOString(),
-    };
+    try {
+        const usersRef = collection(firestore, "users");
+        const q = query(usersRef, where("email", "==", values.email));
+        const querySnapshot = await getDocs(q);
 
-    const updatedTechnicians = [...(group.technicians || []), newTechnician];
-    
-    await updateDocumentNonBlocking(doc(firestore, 'technical-groups', groupId), { technicians: updatedTechnicians });
+        if (querySnapshot.empty) {
+            toast({ variant: 'destructive', title: 'Usuario no encontrado', description: `No se encontró ningún usuario con el email ${values.email}.`});
+            setIsSubmittingTechnician(null);
+            return;
+        }
 
-    toast({ title: "Técnico añadido", description: `"${values.name}" fue añadido a "${group.name}".`});
-    addTechnicianForm.reset();
-    setIsSubmittingTechnician(null);
+        const userDoc = querySnapshot.docs[0];
+        const userData = userDoc.data() as UserProfile;
+
+        const newTechnician: Technician = {
+            userId: userDoc.id,
+            userName: userData.name,
+            addedAt: new Date().toISOString(),
+        };
+
+        if (group.technicians?.some(t => t.userId === newTechnician.userId)) {
+            toast({ variant: 'destructive', title: 'Técnico duplicado', description: `${newTechnician.userName} ya está en este grupo.`});
+            setIsSubmittingTechnician(null);
+            return;
+        }
+
+        const updatedTechnicians = [...(group.technicians || []), newTechnician];
+        await updateDocumentNonBlocking(doc(firestore, 'technical-groups', groupId), { technicians: updatedTechnicians });
+
+        toast({ title: "Técnico añadido", description: `"${newTechnician.userName}" fue añadido a "${group.name}".`});
+        addTechnicianForm.reset();
+    } catch (error) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Ocurrió un error al buscar o añadir el técnico.'});
+    } finally {
+        setIsSubmittingTechnician(null);
+    }
   };
 
-  const handleRemoveTechnician = async (groupId: string, techName: string) => {
+  const handleRemoveTechnician = async (groupId: string, techId: string) => {
     const group = technicalGroups?.find(g => g.id === groupId);
     if (!group) return;
 
-    const updatedTechnicians = group.technicians.filter(t => t.name !== techName);
+    const techToRemove = group.technicians.find(t => t.userId === techId);
+    const updatedTechnicians = group.technicians.filter(t => t.userId !== techId);
     await updateDocumentNonBlocking(doc(firestore, 'technical-groups', groupId), { technicians: updatedTechnicians });
-    toast({ title: "Técnico eliminado", description: `"${techName}" fue eliminado de "${group.name}".`});
+    toast({ title: "Técnico eliminado", description: `"${techToRemove?.userName}" fue eliminado de "${group.name}".`});
   }
 
-  const handleDeleteGroup = async () => {
-    if (!groupToDelete) return;
-    await deleteDocumentNonBlocking(doc(firestore, 'technical-groups', groupToDelete.id));
-    toast({ title: "Grupo eliminado", description: `El grupo "${groupToDelete.name}" ha sido eliminado.`});
-    setGroupToDelete(null);
+  const handleDeleteGroup = async (group: TechnicalGroup) => {
+    await deleteDocumentNonBlocking(doc(firestore, 'technical-groups', group.id));
+    toast({ title: "Grupo eliminado", description: `El grupo "${group.name}" ha sido eliminado.`});
   }
 
   if (isLoadingGroups) {
@@ -125,45 +150,47 @@ export function TechnicalGroupsPage() {
           Gestión de Grupos Técnicos
         </h2>
         <p className="text-muted-foreground text-sm">
-          Crea grupos, añade técnicos y adminístralos.
+          Crea grupos, añade técnicos por su correo electrónico y adminístralos.
         </p>
       </div>
       
-       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><PlusCircle className="h-5 w-5 text-primary"/>Crear Nuevo Grupo</CardTitle>
-        </CardHeader>
-        <Form {...createGroupForm}>
-            <form onSubmit={createGroupForm.handleSubmit(handleCreateGroup)}>
-                 <CardContent>
-                     <FormField
-                      control={createGroupForm.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Nombre del Grupo</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Ej: Equipo de Instalaciones A" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                </CardContent>
-                <CardFooter>
-                    <Button type="submit" disabled={true}>
-                        {isSubmittingGroup && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        {isSubmittingGroup ? 'Creando...' : 'Crear Grupo'}
-                    </Button>
-                </CardFooter>
-            </form>
-        </Form>
-      </Card>
+       {profile?.isAdmin && (
+         <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><PlusCircle className="h-5 w-5 text-primary"/>Crear Nuevo Grupo</CardTitle>
+            </CardHeader>
+            <Form {...createGroupForm}>
+                <form onSubmit={createGroupForm.handleSubmit(handleCreateGroup)}>
+                    <CardContent>
+                        <FormField
+                          control={createGroupForm.control}
+                          name="name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Nombre del Grupo</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Ej: Equipo de Instalaciones A" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                    </CardContent>
+                    <CardFooter>
+                        <Button type="submit" disabled={isSubmittingGroup}>
+                            {isSubmittingGroup && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            {isSubmittingGroup ? 'Creando...' : 'Crear Grupo'}
+                        </Button>
+                    </CardFooter>
+                </form>
+            </Form>
+          </Card>
+       )}
       
       <div>
         <h3 className="text-lg font-semibold mb-4">Grupos Existentes</h3>
         {technicalGroups && technicalGroups.length > 0 ? (
-          <Accordion type="single" collapsible className="w-full">
+          <Accordion type="single" collapsible className="w-full" defaultValue={technicalGroups[0].id}>
             {technicalGroups.sort((a,b) => a.name.localeCompare(b.name)).map(group => (
               <AccordionItem value={group.id} key={group.id}>
                 <AccordionTrigger>
@@ -181,12 +208,14 @@ export function TechnicalGroupsPage() {
                             <h4 className="font-medium mb-2">Técnicos en este grupo:</h4>
                             {group.technicians && group.technicians.length > 0 ? (
                                 <ul className='space-y-2'>
-                                    {group.technicians.map(tech => (
-                                        <li key={tech.name} className="flex items-center justify-between text-sm bg-muted/50 p-2 rounded-md">
-                                            <span>{tech.name}</span>
-                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveTechnician(group.id, tech.name)}>
-                                                <UserMinus className="h-4 w-4 text-destructive"/>
-                                            </Button>
+                                    {group.technicians.sort((a,b) => a.userName.localeCompare(b.userName)).map(tech => (
+                                        <li key={tech.userId} className="flex items-center justify-between text-sm bg-muted/50 p-2 rounded-md">
+                                            <span>{tech.userName}</span>
+                                            {profile?.isAdmin && (
+                                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveTechnician(group.id, tech.userId)}>
+                                                    <UserMinus className="h-4 w-4 text-destructive"/>
+                                                </Button>
+                                            )}
                                         </li>
                                     ))}
                                 </ul>
@@ -194,50 +223,54 @@ export function TechnicalGroupsPage() {
                                 <p className="text-sm text-muted-foreground">Aún no hay técnicos en este grupo.</p>
                             )}
                         </div>
-                        <Form {...addTechnicianForm}>
-                            <form onSubmit={addTechnicianForm.handleSubmit((values) => handleAddTechnician(group.id, values))} className="space-y-4">
-                                <FormField
-                                  control={addTechnicianForm.control}
-                                  name="name"
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel>Añadir técnico</FormLabel>
-                                      <div className="flex gap-2">
-                                        <FormControl>
-                                            <Input placeholder="Nombre del técnico" {...field} />
-                                        </FormControl>
-                                        <Button type="submit" disabled={isSubmittingTechnician === group.id}>
-                                            {isSubmittingTechnician === group.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserPlus className="h-4 w-4"/>}
-                                        </Button>
-                                      </div>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                            </form>
-                        </Form>
-                         <div className="border-t pt-4">
-                            <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" size="sm">
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Eliminar Grupo
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            Esta acción es permanente y eliminará el grupo <strong>{group.name}</strong> y todos sus técnicos.
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel onClick={() => setGroupToDelete(null)}>Cancelar</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => { setGroupToDelete(group); handleDeleteGroup(); }}>Sí, eliminar</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
-                         </div>
+                        {profile?.isAdmin && (
+                            <>
+                                <Form {...addTechnicianForm}>
+                                    <form onSubmit={addTechnicianForm.handleSubmit((values) => handleAddTechnician(group.id, values))} className="space-y-4">
+                                        <FormField
+                                        control={addTechnicianForm.control}
+                                        name="email"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                            <FormLabel>Añadir técnico por email</FormLabel>
+                                            <div className="flex gap-2">
+                                                <FormControl>
+                                                    <Input placeholder="correo@ejemplo.com" {...field} />
+                                                </FormControl>
+                                                <Button type="submit" disabled={isSubmittingTechnician === group.id}>
+                                                    {isSubmittingTechnician === group.id ? <Loader2 className="h-4 w-4 animate-spin"/> : <UserPlus className="h-4 w-4"/>}
+                                                </Button>
+                                            </div>
+                                            <FormMessage />
+                                            </FormItem>
+                                        )}
+                                        />
+                                    </form>
+                                </Form>
+                                <div className="border-t pt-4">
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="destructive" size="sm">
+                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                Eliminar Grupo
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    Esta acción es permanente y eliminará el grupo <strong>{group.name}</strong> y todos sus técnicos.
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                <AlertDialogAction onClick={() => handleDeleteGroup(group)}>Sí, eliminar</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </AccordionContent>
               </AccordionItem>
