@@ -10,6 +10,11 @@
           "type": "string",
           "description": "Unique identifier for the device, typically the serial number."
         },
+        "type": {
+          "type": "string",
+          "enum": ["onu", "stb"],
+          "description": "The type of the device."
+        },
         "shelfId": {
           "type": "string",
           "description": "The ID of the shelf where the device is located."
@@ -17,11 +22,6 @@
         "shelfName": {
           "type": "string",
           "description": "Denormalized name of the shelf for easier querying and display."
-        },
-        "shelfType": {
-          "type": "string",
-          "enum": ["onu", "stb"],
-          "description": "Denormalized type of the shelf for easier querying and display."
         },
         "addedDate": {
           "type": "string",
@@ -79,9 +79,9 @@
       },
       "required": [
         "id",
+        "type",
         "shelfId",
         "shelfName",
-        "shelfType",
         "status",
         "addedDate"
       ]

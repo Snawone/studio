@@ -13,7 +13,7 @@ export type OnuData = {
   'ONU ID': string;
   shelfId: string;
   shelfName: string; // Denormalized for easier display
-  shelfType: 'onu' | 'stb'; // Denormalized for easier display
+  type: 'onu' | 'stb';
   addedDate: string;
   removedDate?: string | null;
   history: OnuHistoryEntry[];

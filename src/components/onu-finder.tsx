@@ -62,7 +62,6 @@ type OnuFinderProps = {
 
 type ShelfGroup = {
     shelfName: string;
-    shelfType: 'onu' | 'stb';
     onus: OnuData[];
 };
 
@@ -163,15 +162,13 @@ export function OnuFinder({
   const shelves: ShelfGroup[] = useMemo(() => {
     if (activeView !== 'activas') return [];
 
-    const shelfMap: Record<string, { shelfType: 'onu' | 'stb'; onus: OnuData[] }> = {};
+    const shelfMap: Record<string, { onus: OnuData[] }> = {};
     const activeOnus = onus.filter(o => o.status === 'active');
     
     activeOnus.forEach(onu => {
         const shelfName = onu.shelfName || 'Sin Estante';
         if (!shelfMap[shelfName]) {
             shelfMap[shelfName] = {
-                // shelfType can be taken from the first onu, as it's the same for the whole shelf
-                shelfType: onu.shelfType || 'onu', 
                 onus: [],
             };
         }
@@ -385,7 +382,7 @@ export function OnuFinder({
                             <div className="flex items-center gap-3">
                                 <Server className="h-5 w-5 text-primary" />
                                 <span className="font-medium">{shelfGroup.shelfName}</span>
-                                <Badge variant="secondary">{shelfGroup.onus.length} {shelfGroup.shelfType.toUpperCase()}s</Badge>
+                                <Badge variant="secondary">{shelfGroup.onus.length} dispositivos</Badge>
                             </div>
                         </AccordionTrigger>
                         <AccordionContent>

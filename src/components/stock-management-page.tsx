@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useFirestore, useCollection, useMemoFirebase } from "@/firebase";
 import { doc, getDocs, writeBatch, collection, query, where, documentId } from 'firebase/firestore';
-import { PackagePlus, Loader2, AlertTriangle, Server } from 'lucide-react';
+import { PackagePlus, Loader2, AlertTriangle, Server, Box } from 'lucide-react';
 import { type Shelf, type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useAuthContext } from '@/firebase/auth/auth-provider';
@@ -21,6 +21,7 @@ import { useAuthContext } from '@/firebase/auth/auth-provider';
 const deviceSchema = z.object({
   ids: z.string().min(1, "Debe ingresar al menos un ID de dispositivo."),
   shelfId: z.string().min(1, "Debe seleccionar un estante."),
+  type: z.enum(['onu', 'stb'], { required_error: "Debe seleccionar un tipo." }),
 });
 
 type DeviceFormValues = z.infer<typeof deviceSchema>;
@@ -32,12 +33,21 @@ export function StockManagementPage() {
   const [isAddingDevice, setIsAddingDevice] = useState(false);
 
   const shelvesCollectionRef = useMemoFirebase(() => collection(firestore, 'shelves'), [firestore]);
-  const { data: shelves, isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
+  const { data: allShelves, isLoading: isLoadingShelves } = useCollection<Shelf>(shelvesCollectionRef);
 
   const deviceForm = useForm<DeviceFormValues>({
     resolver: zodResolver(deviceSchema),
-    defaultValues: { ids: '', shelfId: '' },
+    defaultValues: { ids: '', shelfId: '', type: undefined },
   });
+
+  const selectedType = deviceForm.watch('type');
+
+  const filteredShelves = useMemo(() => {
+    if (!allShelves || !selectedType) {
+      return [];
+    }
+    return allShelves.filter(shelf => shelf.type === selectedType);
+  }, [allShelves, selectedType]);
 
   const handleAddDevices = async (values: DeviceFormValues) => {
     setIsAddingDevice(true);
@@ -48,7 +58,7 @@ export function StockManagementPage() {
       return;
     }
 
-    const selectedShelf = shelves?.find(s => s.id === values.shelfId);
+    const selectedShelf = allShelves?.find(s => s.id === values.shelfId);
     if (!selectedShelf) {
         toast({ variant: "destructive", title: "Error", description: "El estante seleccionado no es válido." });
         setIsAddingDevice(false);
@@ -102,7 +112,7 @@ export function StockManagementPage() {
                 'ONU ID': deviceId,
                 shelfId: values.shelfId,
                 shelfName: selectedShelf.name,
-                shelfType: selectedShelf.type,
+                type: values.type,
                 addedDate: addedDate,
                 status: 'active',
                 history: [historyEntry],
@@ -119,7 +129,8 @@ export function StockManagementPage() {
         
         deviceForm.reset({
             ids: '',
-            shelfId: values.shelfId,
+            shelfId: '',
+            type: values.type
         });
 
     } catch (error: any) {
@@ -152,7 +163,7 @@ export function StockManagementPage() {
         </CardHeader>
         {isLoadingShelves ? (
             <CardContent><Loader2 className="animate-spin"/></CardContent>
-        ) : !shelves || shelves.length === 0 ? (
+        ) : !allShelves || allShelves.length === 0 ? (
             <CardContent>
                 <div className="text-center py-8 border-2 border-dashed rounded-lg bg-muted/50">
                     <AlertTriangle className="h-8 w-8 mx-auto text-muted-foreground" />
@@ -185,20 +196,44 @@ export function StockManagementPage() {
                         </FormItem>
                       )}
                     />
+                    <div className='space-y-4'>
+                    <FormField
+                      control={deviceForm.control}
+                      name="type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tipo de Dispositivo</FormLabel>
+                          <Select onValueChange={(value) => {
+                              field.onChange(value)
+                              deviceForm.setValue('shelfId', '');
+                            }} 
+                            value={field.value} defaultValue="">
+                            <FormControl>
+                              <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="onu">ONU</SelectItem>
+                              <SelectItem value="stb">STB</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={deviceForm.control}
                       name="shelfId"
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Estante</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value} defaultValue="">
+                          <Select onValueChange={field.onChange} value={field.value} defaultValue="" disabled={!selectedType}>
                             <FormControl>
-                              <SelectTrigger><SelectValue placeholder="Seleccionar estante..." /></SelectTrigger>
+                              <SelectTrigger><SelectValue placeholder={selectedType ? "Seleccionar estante..." : "Primero elije un tipo"} /></SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {shelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map((shelf) => (
+                              {filteredShelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map((shelf) => (
                                   <SelectItem key={shelf.id} value={shelf.id} disabled={shelf.itemCount >= shelf.capacity}>
-                                    {shelf.name} ({shelf.itemCount}/{shelf.capacity} {shelf.type.toUpperCase()}s)
+                                    {shelf.name} ({shelf.itemCount}/{shelf.capacity})
                                   </SelectItem>
                               ))}
                             </SelectContent>
@@ -207,6 +242,7 @@ export function StockManagementPage() {
                         </FormItem>
                       )}
                     />
+                    </div>
                 </div>
               </CardContent>
               <CardFooter>
