@@ -24,6 +24,7 @@ interface OptionsPageProps {
 type PreviewData = {
   shelfName: string;
   deviceIds: string[];
+  type: 'onu' | 'stb';
 }
 
 export function OptionsPage({ allOnus }: OptionsPageProps) {
@@ -33,7 +34,6 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [deviceType, setDeviceType] = useState<'onu' | 'stb'>('onu');
   const [previewData, setPreviewData] = useState<PreviewData[]>([]);
 
   const onDrop = (acceptedFiles: File[]) => {
@@ -83,6 +83,7 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
             parsedData.push({
               shelfName: shelfName.trim(),
               deviceIds: devicesInShelf,
+              type: 'onu', // Default type
             });
           }
         });
@@ -107,6 +108,14 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
     };
     reader.readAsArrayBuffer(file);
   };
+
+  const handleDeviceTypeChange = (shelfName: string, newType: 'onu' | 'stb') => {
+    setPreviewData(currentData => 
+        currentData.map(shelf => 
+            shelf.shelfName === shelfName ? { ...shelf, type: newType } : shelf
+        )
+    );
+  };
   
   const handleConfirmImport = async () => {
     if (previewData.length === 0 || !profile) return;
@@ -118,12 +127,12 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
       const batch = writeBatch(firestore);
       const addedDate = new Date().toISOString();
 
-      previewData.forEach(({ shelfName, deviceIds }) => {
+      previewData.forEach(({ shelfName, deviceIds, type }) => {
         const shelfRef = doc(collection(firestore, 'shelves'));
         const newShelf: Omit<Shelf, 'id'> = {
           name: shelfName,
           capacity: deviceIds.length,
-          type: deviceType,
+          type: type,
           createdAt: addedDate,
           itemCount: deviceIds.length
         };
@@ -134,7 +143,7 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
           const newOnu: Omit<OnuData, 'id'> = {
             shelfId: shelfRef.id,
             shelfName: shelfName,
-            type: deviceType,
+            type: type,
             addedDate: addedDate,
             status: 'active',
             history: [{
@@ -277,11 +286,11 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
       </Card>
 
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Vista Previa de la Importación</DialogTitle>
             <DialogDescription>
-              Revisa los datos a continuación. Si todo es correcto, confirma para importar a la base de datos.
+              Revisa los datos y asigna el tipo de dispositivo a cada estante. Si todo es correcto, confirma para importar.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -295,25 +304,30 @@ export function OptionsPage({ allOnus }: OptionsPageProps) {
                   <p className="text-2xl font-bold">{totalDevicesToCreate}</p>
               </div>
             </div>
-             <div>
-                <Label>Tipo de dispositivo para esta carga:</Label>
-                <RadioGroup defaultValue="onu" value={deviceType} onValueChange={(value: 'onu' | 'stb') => setDeviceType(value)} className="flex items-center gap-4 mt-2">
-                <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="onu" id="r-onu-preview" />
-                    <Label htmlFor="r-onu-preview">ONU</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="stb" id="r-stb-preview" />
-                    <Label htmlFor="r-stb-preview">STB</Label>
-                </div>
-                </RadioGroup>
-            </div>
-            <ScrollArea className="h-64 border rounded-md p-4">
+
+            <ScrollArea className="h-72 border rounded-md p-4">
                 <div className="space-y-4">
                     {previewData.map(shelf => (
                         <div key={shelf.shelfName}>
-                            <h4 className="font-semibold flex items-center gap-2"><Warehouse className="h-4 w-4"/>{shelf.shelfName} <span className="text-sm font-normal text-muted-foreground">({shelf.deviceIds.length} dispositivos)</span></h4>
-                            <div className="mt-2 text-xs font-mono text-muted-foreground pl-6 space-y-1">
+                           <div className="flex justify-between items-center">
+                              <h4 className="font-semibold flex items-center gap-2"><Warehouse className="h-4 w-4"/>{shelf.shelfName} <span className="text-sm font-normal text-muted-foreground">({shelf.deviceIds.length} dispositivos)</span></h4>
+                              <RadioGroup 
+                                defaultValue="onu" 
+                                value={shelf.type} 
+                                onValueChange={(value: 'onu' | 'stb') => handleDeviceTypeChange(shelf.shelfName, value)} 
+                                className="flex items-center gap-4"
+                              >
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="onu" id={`r-onu-${shelf.shelfName}`} />
+                                    <Label htmlFor={`r-onu-${shelf.shelfName}`} className="text-xs">ONU</Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="stb" id={`r-stb-${shelf.shelfName}`} />
+                                    <Label htmlFor={`r-stb-${shelf.shelfName}`} className="text-xs">STB</Label>
+                                </div>
+                                </RadioGroup>
+                           </div>
+                            <div className="mt-2 text-xs font-mono text-muted-foreground pl-6 space-y-1 max-h-24 overflow-y-auto">
                                 {shelf.deviceIds.map(id => <p key={id}>{id}</p>)}
                             </div>
                         </div>
