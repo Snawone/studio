@@ -553,43 +553,43 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
           <CardDescription>Busca un dispositivo por su ID o filtra por estante para moverlo o eliminarlo del inventario.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-           <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-grow flex items-center gap-2">
-              <div className="relative w-full">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por ID de dispositivo..."
-                  value={managementSearchTerm}
-                  onChange={(e) => setManagementSearchTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
-                  className="pl-10"
-                />
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex flex-col sm:flex-row gap-2 w-full flex-wrap">
+                  <div className="relative flex-grow w-full sm:w-auto">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por ID de dispositivo..."
+                      value={managementSearchTerm}
+                      onChange={(e) => setManagementSearchTerm(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearchDevice()}
+                      className="pl-10"
+                    />
+                  </div>
+                  <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm} className="shrink-0">
+                    {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Buscar
+                  </Button>
               </div>
-              <Button onClick={handleSearchDevice} disabled={isSearching || !managementSearchTerm} className="shrink-0">
-                {isSearching && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Buscar
-              </Button>
-            </div>
             
-            <div className="flex items-center gap-2">
-              <Label htmlFor="shelf-filter" className="text-sm shrink-0">o Filtrar:</Label>
-              <div className="w-full">
-                <Select onValueChange={(value) => setFilterShelfId(value === 'none' ? null : value)} value={filterShelfId || 'none'}>
-                    <SelectTrigger id="shelf-filter" className="w-full">
-                        <SelectValue placeholder="Seleccionar estante..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="none">-- Ninguno --</SelectItem>
-                        {allShelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map(shelf => (
-                            <SelectItem key={shelf.id} value={shelf.id}>
-                                {shelf.name}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <Label htmlFor="shelf-filter" className="text-sm shrink-0">o Filtrar:</Label>
+                <div className="w-full">
+                  <Select onValueChange={(value) => setFilterShelfId(value === 'none' ? null : value)} value={filterShelfId || 'none'}>
+                      <SelectTrigger id="shelf-filter" className="w-full">
+                          <SelectValue placeholder="Seleccionar estante..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="none">-- Ninguno --</SelectItem>
+                          {allShelves.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })).map(shelf => (
+                              <SelectItem key={shelf.id} value={shelf.id}>
+                                  {shelf.name}
+                              </SelectItem>
+                          ))}
+                      </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
-          </div>
           
           <div className="pt-4 space-y-4">
             {isSearching && <div className="text-center p-4"><Loader2 className="animate-spin text-primary"/></div>}
