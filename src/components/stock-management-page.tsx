@@ -38,6 +38,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { Label } from '@/components/ui/label';
 
 const deviceSchema = z.object({
   ids: z.string().min(1, "Debe ingresar al menos un ID de dispositivo."),
@@ -579,3 +580,5 @@ export function StockManagementPage({ allOnus, allShelves }: StockManagementPage
     </section>
   );
 }
+
+    
