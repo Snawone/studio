@@ -1,25 +1,8 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ONUS: Any authenticated user can read and write.
-    match /onus/{onuId} {
-      allow read, write: if request.auth != null;
-    }
-
-    // SHELVES: Any authenticated user can read and write.
-    match /shelves/{shelfId} {
-      allow read, write: if request.auth != null;
-    }
-
-    // USERS: Any authenticated user can read and write.
-    match /users/{userId} {
-      allow read, write: if request.auth != null;
-    }
-
-    // TECHNICAL GROUPS: Any authenticated user can read and write.
-    match /technical-groups/{groupId} {
+    // This rule allows any authenticated user to read and write to any document.
+    match /{document=**} {
       allow read, write: if request.auth != null;
     }
   }
