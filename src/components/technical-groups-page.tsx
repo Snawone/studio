@@ -221,11 +221,27 @@ export function TechnicalGroupsPage() {
     return users.filter(u => !technicianIds.includes(u.id));
   };
   
-    if (isLoadingGroups || isLoadingUsers) {
+  if (!profile?.isAdmin) {
+    return (
+       <section className="w-full max-w-4xl mx-auto flex flex-col gap-8">
+            <div className="space-y-2">
+                <h2 className="text-2xl font-headline font-semibold flex items-center gap-2">
+                    <Users className="h-6 w-6" />
+                    Acceso Denegado
+                </h2>
+                <p className="text-muted-foreground text-sm">
+                    No tienes permisos para acceder a esta sección.
+                </p>
+            </div>
+       </section>
+    )
+  }
+
+  if (isLoadingGroups || isLoadingUsers) {
     return (
         <div className="flex h-64 w-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="ml-4 text-muted-foreground">Cargando datos del grupo...</p>
+            <p className="ml-4 text-muted-foreground">Cargando datos...</p>
         </div>
     );
   }

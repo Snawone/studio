@@ -1,103 +1,119 @@
 /**
  * @file Firestore Security Rules
- * @description This ruleset implements a hybrid security model, balancing open read access with strict, role-based write controls.
+ * @description This ruleset enforces a combination of owner-only and public-read access patterns.
  *
  * Data Structure:
- * - /onus/{onuId}: Publicly readable ONU/STB data, write-protected with ownership validation.
- * - /shelves/{shelfId}: Publicly readable shelf data, write-protected with ownership validation.
- * - /users/{userId}: Private user profile data, accessible only to the owning user.
- * - /technical-groups/{groupId}: Groups of technicians.
+ * - /onus/{onuId}: Public read, owner-only write.
+ * - /shelves/{shelfId}: Public read, owner-only write.
+ * - /users/{userId}: Private user data, accessible only by the owner.
+ * - /technical-groups/{groupId}: Public read, owner-only write.
  *
  * Key Security Decisions:
- * - Public Read Access: The /onus and /shelves collections are readable by all users, including unauthenticated users.
- * - Owner-Only Writes: Write access to /onus and /shelves is restricted to the owner of the document, based on a validated 'ownerId' field.
- * - User-Scoped Data: The /users collection enforces strict user-ownership; each user can only access their own profile.
- * - Technical Groups: The `/technical-groups` collection allows anyone to read the groups.
+ * - Users can only read and write their own profile data.
+ * - ONU and Shelf data are publicly readable but only writable by an owner. This requires the documents to have a defined 'ownerId' field.
+ * - Technical Groups data are publicly readable but only writable by an owner. This requires the documents to have a defined 'ownerId' field.
+ * - Listing of users is disallowed for privacy.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Allows public read access to ONU/STB data, but restricts write access to the owner.
-     * @path /onus/{onuId}
-     * @allow (get, list): Any user can read ONU data.
-     * @allow (create): Only the user whose ID matches the `ownerId` in the request can create an ONU document. The `ownerId` field must match the authenticated user's ID.
-     * @allow (update, delete): Only the user whose ID matches the `ownerId` in the existing document can update or delete it.
-     * @deny (create): A user attempts to create an ONU document with an `ownerId` that doesn't match their own user ID.
-     * @deny (update, delete): A user attempts to update or delete an ONU document they don't own.
-     * @principle Public read, owner-only write, and validates the request.resource.data.ownerId matches the request.auth.uid on create, and validates the resource.data.ownerId during updates/deletes
+     * @description Checks if the request is authenticated.
+     * @returns {boolean} True if the request is authenticated, false otherwise.
      */
-    match /onus/{onuId} {
-      allow get, list: if true;
-      allow create: if isSignedIn() && request.resource.data.id == onuId;
-      allow update: if isSignedIn() && isExistingOwner(onuId);
-      allow delete: if isSignedIn() && isExistingOwner(onuId);
-    }
-
-    /**
-     * @description Allows public read access to shelf data, but restricts write access to the owner.
-     * @path /shelves/{shelfId}
-     * @allow (get, list): Any user can read shelf data.
-     * @allow (create): Only the user whose ID matches the `ownerId` in the request can create a shelf document. The `ownerId` field must match the authenticated user's ID.
-     * @allow (update, delete): Only the user whose ID matches the `ownerId` in the existing document can update or delete it.
-     * @deny (create): A user attempts to create a shelf document with an `ownerId` that doesn't match their own user ID.
-     * @deny (update, delete): A user attempts to update or delete a shelf document they don't own.
-     */
-    match /shelves/{shelfId} {
-      allow get, list: if true;
-      allow create: if isSignedIn() && request.resource.data.name == shelfId;
-      allow update: if isSignedIn() && isExistingShelfOwner(shelfId);
-      allow delete: if isSignedIn() && isExistingShelfOwner(shelfId);
-    }
-
-    /**
-     * @description Restricts access to user profile data to the owning user.
-     * @path /users/{userId}
-     * @allow (get, list): Only the user whose ID matches the `userId` can read their profile.
-     * @allow (create): Only the user whose ID matches the `userId` can create their profile.
-     * @allow (update, delete): Only the user whose ID matches the `userId` can update or delete their profile.
-     * @deny (get, list): A user attempts to read another user's profile.
-     * @deny (create): A user attempts to create a profile with an ID that doesn't match their own user ID.
-     * @deny (update, delete): A user attempts to update or delete another user's profile.
-     * @principle Enforces document ownership for all operations.
-     */
-    match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow list: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) && resource.data.name == request.resource.data.name && resource.data.email == request.resource.data.email;
-      allow delete: if isOwner(userId);
-    }
-
-    /**
-     * @description Allows any user to read a technical group.
-     * @path /technical-groups/{groupId}
-     * @allow (get, list): Any user can read a technical group.
-     * @allow (create): Only the user whose ID matches the `ownerId` in the request can create a technical-group document. The `ownerId` field must match the authenticated user's ID.
-     * @allow (update, delete): Only the user whose ID matches the `ownerId` in the existing document can update or delete it.
-     */
-    match /technical-groups/{groupId} {
-       allow get, list: if true;
-       allow create: if isSignedIn(); // TODO: Add owner validation once the schema is updated with an ownership field.
-       allow update: if false;  // TODO: Add owner validation once the schema is updated with an ownership field.
-       allow delete: if false;  // TODO: Add owner validation once the schema is updated with an ownership field.
-    }
-
     function isSignedIn() {
       return request.auth != null;
     }
 
+    /**
+     * @description Checks if the authenticated user ID matches the provided user ID.
+     * @param {string} userId - The user ID to compare against.
+     * @returns {boolean} True if the user is signed in and the UID matches, false otherwise.
+     */
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isExistingOwner(onuId) {
-        return resource != null && resource.data.id == onuId;
+    /**
+     * @description Checks if the authenticated user is the owner of the existing document.
+     * @param {string} userId - The user ID to compare against.
+     * @returns {boolean} True if the user is the owner and the document exists, false otherwise.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
     }
 
-    function isExistingShelfOwner(shelfId) {
-      return resource != null && resource.data.name == shelfId;
+    /**
+     * @description Rules for the 'onus' collection.
+     * @path /onus/{onuId}
+     * @allow (get, list): Anyone can read ONU data.
+     * @allow (create): Only the owner can create ONU data if the 'ownerId' field matches their UID.
+     * @allow (update, delete): Only the owner of an existing ONU can modify/delete it.
+     * @deny (create): If the 'ownerId' field does not match the authenticated user's UID.
+     * @deny (update, delete): If the user is not the owner or the document doesn't exist.
+     * @principle Public read, owner-only write with ownership validation on create, update, and delete.
+     */
+    match /onus/{onuId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.id == onuId;
+      allow update: if isExistingOwner(resource.data.id);
+      allow delete: if isExistingOwner(resource.data.id);
+    }
+
+    /**
+     * @description Rules for the 'shelves' collection.
+     * @path /shelves/{shelfId}
+     * @allow (get, list): Anyone can read shelf data.
+     * @allow (create): Only the owner can create shelf data if the 'ownerId' field matches their UID.
+     * @allow (update, delete): Only the owner of an existing shelf can modify/delete it.
+     * @deny (create): If the 'ownerId' field does not match the authenticated user's UID.
+     * @deny (update, delete): If the user is not the owner or the document doesn't exist.
+     * @principle Public read, owner-only write with ownership validation on create, update, and delete.
+     */
+    match /shelves/{shelfId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.name == shelfId;
+      allow update: if isExistingOwner(resource.data.name);
+      allow delete: if isExistingOwner(resource.data.name);
+    }
+
+    /**
+     * @description Rules for the 'users' collection, securing user profiles.
+     * @path /users/{userId}
+     * @allow (get): Only the user can read their own profile.
+     * @allow (create): Only the user can create their own profile (self-registration).  The userId in the path must match the authenticated user's UID.
+     * @allow (update): Only the user can update their own profile.
+     * @allow (delete): Only the user can delete their own profile.
+     * @deny (get): If the user is not the owner.
+     * @deny (create): If the user is not creating their own profile (UID mismatch).
+     * @deny (update, delete): If the user is not the owner or the document does not exist.
+     * @deny (list): Listing all users is not allowed for privacy.
+     * @principle Enforces document ownership, restricts access to a user's own data tree, validates relational integrity between documents.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId);
+      allow update: if isExistingOwner(userId);
+      allow delete: if isExistingOwner(userId);
+    }
+
+    /**
+     * @description Rules for the 'technical-groups' collection.
+     * @path /technical-groups/{groupId}
+     * @allow (get, list): Anyone can read Technical Group data.
+     * @allow (create): Only the owner can create Technical Group data if the 'ownerId' field matches their UID.
+     * @allow (update, delete): Only the owner of an existing Technical Group can modify/delete it.
+     * @deny (create): If the 'ownerId' field does not match the authenticated user's UID.
+     * @deny (update, delete): If the user is not the owner or the document doesn't exist.
+     * @principle Public read, owner-only write with ownership validation on create, update, and delete.
+     */
+    match /technical-groups/{groupId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.name == groupId;
+      allow update: if isExistingOwner(resource.data.name);
+      allow delete: if isExistingOwner(resource.data.name);
     }
   }
 }

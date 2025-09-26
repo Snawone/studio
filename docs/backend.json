@@ -198,8 +198,7 @@
       },
       "required": [
         "name",
-        "createdAt",
-        "technicians"
+        "createdAt"
       ]
     }
   },
