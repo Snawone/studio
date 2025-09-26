@@ -30,7 +30,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
       return sorted;
     }
     return sorted.filter(onu =>
-      onu['ONU ID'].toLowerCase().includes(searchTerm.toLowerCase())
+      onu.id.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [allOnus, searchTerm]);
 
@@ -110,7 +110,8 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base font-mono">
                     <Tag className="h-4 w-4" />
-                    {onu['ONU ID']}
+                    {onu.id}
+                    <Badge variant={onu.type === 'onu' ? 'outline' : 'secondary'} className="text-xs">{onu.type.toUpperCase()}</Badge>
                   </CardTitle>
                   <CardDescription className="flex items-center gap-4 mt-2">
                      <span className="flex items-center gap-2">
@@ -165,5 +166,3 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
     </section>
   );
 }
-
-    

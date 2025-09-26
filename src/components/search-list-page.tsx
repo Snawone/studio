@@ -152,7 +152,8 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-base font-mono break-all">
                             <Tag className="h-4 w-4" />
-                            {onu['ONU ID']}
+                            {onu.id}
+                            <Badge variant={onu.type === 'onu' ? 'outline' : 'secondary'} className="text-xs">{onu.type.toUpperCase()}</Badge>
                         </CardTitle>
                         <CardDescription className="flex items-center gap-4 pt-2">
                             <span className="flex items-center gap-1">
@@ -222,7 +223,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
           <AlertDialogHeader>
             <AlertDialogTitle>¿Marcar como encontrada?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esto moverá el dispositivo <strong className='break-all'>{onuToRetire?.['ONU ID']}</strong> a la lista de "Retiradas" y la quitará de la lista de búsqueda.
+              Esto moverá el dispositivo <strong className='break-all'>{onuToRetire?.id}</strong> a la lista de "Retiradas" y la quitará de la lista de búsqueda.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -254,7 +255,3 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
     </section>
   );
 }
-
-    
-
-    

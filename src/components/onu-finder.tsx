@@ -155,7 +155,7 @@ export function OnuFinder({
   const filteredResults = useMemo(() => {
     if (!searchTerm) return onus;
     return onus.filter((row) => 
-        row['ONU ID']?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+        row.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [searchTerm, onus]);
   
@@ -221,8 +221,8 @@ export function OnuFinder({
 
   const renderOnuCard = (row: OnuData, index: number) => {
     const isRetired = row.status === 'removed';
-    const isExactMatch = searchTerm.length > 0 && row['ONU ID'].toLowerCase() === searchTerm.toLowerCase();
-    const onuId = row['ONU ID'];
+    const isExactMatch = searchTerm.length > 0 && row.id.toLowerCase() === searchTerm.toLowerCase();
+    const onuId = row.id;
     const idPrefix = onuId.slice(0, -6);
     const idSuffix = onuId.slice(-6);
     const isInSearchList = searchList.includes(row.id);
@@ -260,7 +260,7 @@ export function OnuFinder({
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle>Historial de la ONU</DialogTitle>
-                            <DialogDescription className="font-mono break-all pt-2">{row["ONU ID"]}</DialogDescription>
+                            <DialogDescription className="font-mono break-all pt-2">{row.id}</DialogDescription>
                         </DialogHeader>
                         <div className="max-h-80 overflow-y-auto pr-4">
                             <ul className="space-y-4 mt-4">
@@ -534,7 +534,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción marcará el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> como retirado. Esto disminuirá el contador de items en el estante <strong>{onuToManage?.shelfName}</strong>.
+              Esta acción marcará el dispositivo <strong className="break-all">{onuToManage?.id}</strong> como retirado. Esto disminuirá el contador de items en el estante <strong>{onuToManage?.shelfName}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -551,7 +551,7 @@ export function OnuFinder({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Confirmar devolución?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción devolverá el dispositivo <strong className="break-all">{onuToManage?.['ONU ID']}</strong> a la lista de activos y aumentará el contador de items en el estante <strong>{onuToManage?.shelfName}</strong>.
+              Esta acción devolverá el dispositivo <strong className="break-all">{onuToManage?.id}</strong> a la lista de activos y aumentará el contador de items en el estante <strong>{onuToManage?.shelfName}</strong>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -565,5 +565,3 @@ export function OnuFinder({
     </section>
   );
 }
-
-    

@@ -100,7 +100,6 @@ export function StockManagementPage() {
         uniqueDeviceIds.forEach(deviceId => {
             const deviceRef = doc(firestore, 'onus', deviceId);
             const newDevice: Omit<OnuData, 'id'> = {
-                'ONU ID': deviceId,
                 shelfId: values.shelfId,
                 shelfName: selectedShelf.name,
                 type: values.type,
@@ -108,7 +107,7 @@ export function StockManagementPage() {
                 status: 'active',
                 history: [historyEntry],
             };
-            batch.set(deviceRef, newDevice);
+            batch.set(deviceRef, {id: deviceId, ...newDevice});
         });
         
         const shelfRef = doc(firestore, 'shelves', values.shelfId);
@@ -194,10 +193,7 @@ export function StockManagementPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Tipo de Dispositivo</FormLabel>
-                          <Select onValueChange={(value) => {
-                              field.onChange(value)
-                              deviceForm.setValue('shelfId', '');
-                            }} 
+                          <Select onValueChange={field.onChange} 
                             value={field.value} defaultValue="">
                             <FormControl>
                               <SelectTrigger><SelectValue placeholder="Seleccionar tipo..." /></SelectTrigger>

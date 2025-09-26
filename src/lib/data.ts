@@ -1,3 +1,4 @@
+
 export type OnuAction = 'added' | 'removed' | 'restored' | 'created';
 
 export type OnuHistoryEntry = {
@@ -10,7 +11,6 @@ export type OnuHistoryEntry = {
 
 export type OnuData = {
   id: string;
-  'ONU ID': string;
   shelfId: string;
   shelfName: string; // Denormalized for easier display
   type: 'onu' | 'stb';
