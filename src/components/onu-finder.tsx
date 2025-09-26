@@ -171,10 +171,11 @@ export function OnuFinder({
   }, [onus, activeView]);
 
   
-  const formatDate = (dateString: string | undefined) => {
+  const formatDate = (dateString: string | undefined, includeTime = false) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es });
+      const formatString = includeTime ? "dd/MM/yyyy, HH:mm" : "dd/MM/yyyy";
+      return format(new Date(dateString), formatString, { locale: es });
     } catch (e) {
       return 'Fecha inválida';
     }
@@ -255,7 +256,7 @@ export function OnuFinder({
                                         <div className="mt-1">{getHistoryIcon(entry.action)}</div>
                                         <div>
                                             <p className="font-medium text-sm">{getHistoryMessage(entry)}</p>
-                                            <p className="text-xs text-muted-foreground">{formatDate(entry.date)}</p>
+                                            <p className="text-xs text-muted-foreground">{formatDate(entry.date, true)}</p>
                                             {entry.userName && (
                                                 <p className="text-xs text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" />{entry.userName}</p>
                                             )}
@@ -538,5 +539,7 @@ export function OnuFinder({
     </section>
   );
 }
+
+    
 
     

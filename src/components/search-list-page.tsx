@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { type OnuData, type OnuHistoryEntry } from '@/lib/data';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Button } from '@/components/ui/button';
+import { Button } from "@/components/ui/button";
 import { Badge } from '@/components/ui/badge';
 import { SearchCheck, Server, Tag, Trash2, Calendar, PackageX, CheckCircle } from "lucide-react";
 import {
@@ -116,7 +116,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es });
+      return format(new Date(dateString), "dd/MM/yyyy", { locale: es });
     } catch (e) {
       return 'Fecha inválida';
     }
@@ -254,5 +254,7 @@ export function SearchListPage({ searchListOnus, searchListIds, userId }: Search
     </section>
   );
 }
+
+    
 
     

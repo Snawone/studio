@@ -37,7 +37,7 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
     try {
-      return format(new Date(dateString), "d 'de' MMMM, yyyy, HH:mm", { locale: es });
+      return format(new Date(dateString), "dd/MM/yyyy, HH:mm", { locale: es });
     } catch (e) {
       return 'Fecha inválida';
     }
@@ -165,3 +165,5 @@ export function HistoryPage({ allOnus }: HistoryPageProps) {
     </section>
   );
 }
+
+    
