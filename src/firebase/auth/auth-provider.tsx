@@ -8,11 +8,10 @@ import {
   ReactNode,
 } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, DocumentSnapshot } from 'firebase/firestore';
 
 import { useAuth, useFirestore } from '@/firebase/provider';
 import { type UserProfile } from '@/lib/data';
-import { Loader2 } from 'lucide-react';
 
 interface AuthContextType {
   user: User | null;
@@ -34,36 +33,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setAuthLoading(true);
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        
-        const idTokenResult = await firebaseUser.getIdTokenResult(true);
-        const isAdmin = idTokenResult.claims.isAdmin === true;
+        let profileUnsubscribe: (() => void) | undefined;
 
-        const userDocRef = doc(firestore, 'users', firebaseUser.uid);
-        const unsubscribeProfile = onSnapshot(userDocRef, (doc) => {
-          if (doc.exists()) {
-            const userProfileData = { id: doc.id, ...doc.data() } as UserProfile;
-            userProfileData.isAdmin = isAdmin;
-            setProfile(userProfileData);
+        firebaseUser.getIdTokenResult(true).then(idTokenResult => {
+            const isAdmin = idTokenResult.claims.isAdmin === true;
 
-            if (!pathname.startsWith('/app')) {
-              router.push('/app');
-            }
-          } else {
-              setProfile(null); // User record doesn't exist in Firestore
-          }
-          setAuthLoading(false);
-        }, (error) => {
-            console.error("Error fetching user profile:", error);
+            const userDocRef = doc(firestore, 'users', firebaseUser.uid);
+            profileUnsubscribe = onSnapshot(userDocRef, (docSnap: DocumentSnapshot) => {
+                if (docSnap.exists()) {
+                    const userProfileData = { id: docSnap.id, ...docSnap.data() } as UserProfile;
+                    userProfileData.isAdmin = isAdmin;
+                    setProfile(userProfileData);
+                } else {
+                    setProfile(null);
+                }
+                setAuthLoading(false);
+                if (!pathname.startsWith('/app')) {
+                    router.push('/app');
+                }
+            }, (error) => {
+                console.error("Error fetching user profile:", error);
+                setProfile(null);
+                setAuthLoading(false);
+            });
+        }).catch(error => {
+            console.error("Error getting ID token result:", error);
+            setUser(null);
             setProfile(null);
             setAuthLoading(false);
         });
-        
-        return () => unsubscribeProfile();
 
+        // Cleanup function for profile listener
+        return () => {
+          if (profileUnsubscribe) {
+            profileUnsubscribe();
+          }
+        };
       } else {
         setUser(null);
         setProfile(null);
@@ -73,9 +81,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     });
-    return () => unsubscribe();
-  }, [auth, router, pathname, firestore]);
-  
+
+    return () => unsubscribeAuth();
+  }, [auth, firestore, router, pathname]);
 
   const logout = async () => {
     await signOut(auth);

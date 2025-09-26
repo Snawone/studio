@@ -30,7 +30,7 @@ export default function AppPage() {
   const { data: allOnus, isLoading: isOnusLoading } = useCollection<OnuData>(onusCollectionRef);
 
   const searchListOnus = useMemo(() => {
-    if (!profile || !allOnus) return [];
+    if (!profile || !allOnus || !profile.searchList) return [];
     return allOnus.filter(onu => profile.searchList.includes(onu.id));
   }, [allOnus, profile]);
 
